@@ -13,6 +13,7 @@ price-checker-bot/
 ├── scraper.py        # Extração de preços via BeautifulSoup
 ├── sheets.py         # Integração com Google Sheets
 ├── notifier.py       # Alertas via Telegram (opcional)
+├── config_gui.py     # Interface gráfica para configurar o bot (Tkinter)
 ├── config.json       # Configuração de produtos e credenciais
 ├── requirements.txt  # Dependências Python
 ├── .gitignore        # Arquivos ignorados pelo Git
@@ -97,7 +98,45 @@ pip install -r requirements.txt
 
 ---
 
-## 📝 Configuração do `config.json`
+## �️ Interface Gráfica de Configuração
+
+Para facilitar a configuração do bot sem editar o `config.json` diretamente, utilize a interface gráfica:
+
+```bash
+python config_gui.py
+```
+
+> Usa apenas **Tkinter**, que já vem embutido no Python — nenhuma dependência extra necessária.
+
+### Aba ⚙️ Configurações Gerais
+
+| Campo | Descrição |
+|---|---|
+| Arquivo de credenciais | Caminho para o `credentials.json` do Google |
+| Nome da planilha | Nome exato da planilha no Google Drive |
+| Ativar Telegram | Liga/desliga os alertas |
+| Bot Token | Token fornecido pelo @BotFather |
+| Chat ID | ID do chat para receber os alertas |
+| Alertar em novo mínimo | Envia mensagem quando o preço bate recorde |
+
+### Aba 📦 Produtos
+
+| Ação | Como usar |
+|---|---|
+| **➕ Adicionar** | Abre formulário para novo produto |
+| **✏️ Editar** | Edita o produto selecionado (duplo clique também funciona) |
+| **🗑️ Remover** | Remove com confirmação |
+| **⬆ / ⬇ Reordenar** | Muda a ordem de verificação dos produtos |
+
+No formulário de produto, os **seletores CSS** são inseridos um por linha, do mais específico para o mais genérico. O bot tentará cada um em sequência até encontrar o preço.
+
+### Salvando
+
+Clique em **"Salvar configurações"** — o `config.json` é atualizado imediatamente. O bot utilizará as novas configurações na próxima execução.
+
+---
+
+## 📝 Configuração Manual do `config.json`
 
 ```json
 {
@@ -362,6 +401,11 @@ setup_logging(level="DEBUG")
 - Confirme que `enabled: true` está no `config.json`
 - Verifique se o `bot_token` e `chat_id` estão corretos
 - Certifique-se de ter iniciado uma conversa com o bot antes de tentar receber mensagens
+
+### ❌ A interface gráfica não abre
+- Verifique se o Python foi instalado com suporte a Tkinter (a instalação padrão do python.org no Windows já inclui)
+- Teste com: `python -c "import tkinter; tkinter.Tk().destroy(); print('OK')"`
+- No Linux, instale com: `sudo apt install python3-tk`
 
 ### ❌ Preços de páginas com JavaScript não são extraídos
 - Sites como Americanas e Mercado Livre podem usar JavaScript para renderizar preços

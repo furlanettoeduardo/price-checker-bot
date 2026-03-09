@@ -3,14 +3,14 @@ requests==2.31.0
 
 # Parsing de HTML
 beautifulsoup4==4.12.3
-lxml==5.2.1
+lxml>=5.2.1
 
 # Integração com Google Sheets
 gspread==6.1.2
 oauth2client==4.1.3
 
 # Opcional: análise de dados / relatórios
-pandas==2.2.2
+pandas>=2.2.2
 
 # Opcional: scraping de páginas com JavaScript (descomente se necessário)
 # selenium==4.21.0
