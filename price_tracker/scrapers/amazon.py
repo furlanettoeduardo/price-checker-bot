@@ -20,7 +20,7 @@ from typing import Optional
 
 from bs4 import BeautifulSoup
 
-from price_tracker.utils.price_parser import normalize_price
+from price_tracker.utils.price_parser import normalize_price, parse_installment
 
 logger = logging.getLogger(__name__)
 
@@ -35,46 +35,112 @@ _SINGLE_SELECTORS = [
     "#apex_offerDisplay_desktop .a-price .a-offscreen",
 ]
 
+_OLD_PRICE_SELECTORS = [
+    ".a-text-price .a-offscreen",          # Preço riscado (strike-through)
+    ".a-price.a-text-price .a-offscreen",
+    "#listPrice",
+    "#priceblock_listprice",
+    ".a-price[data-a-strike='true'] .a-offscreen",
+]
+
+_INSTALLMENT_SELECTORS = [
+    "#installmentCalculator_feature_div span",
+    ".best-offer-name",
+    "#buyInstallments",
+    "#installments_feature_div span",
+]
+
 
 def extract(soup: BeautifulSoup) -> Optional[dict]:
     """
-    Extrai o preço de uma página de produto da Amazon Brasil.
+    Extrai preço e campos adicionais de uma página de produto da Amazon Brasil.
 
-    Estratégia:
+    Estratégia para preço principal:
       1. Tenta compor preço a partir de whole + fraction
       2. Fallback para seletores de texto único
 
     Retorna
     -------
-    {"price": float, "currency": "BRL", "confidence": float}
+    {
+        "price"            : float,
+        "preco_sem_promocao": float | None,
+        "preco_parcelado"  : float | None,
+        "parcelas"         : int | None,
+        "preco_pix"        : float | None,
+        "currency"         : "BRL",
+        "confidence"       : float,
+    }
     ou None se nenhum método funcionar.
     """
     # ── Tentativa 1: preço composto (whole + fraction) ────────────────────
     price = _extract_composed(soup)
-    if price is not None:
-        logger.info(f"[Amazon] Preço R$ {price:.2f} — método: composto")
-        return {"price": price, "currency": "BRL", "confidence": 0.92}
+    confidence = 0.92 if price is not None else 0.88
 
-    # ── Tentativa 2: seletores de texto único ─────────────────────────────
-    for selector in _SINGLE_SELECTORS:
+    if price is None:
+        # ── Tentativa 2: seletores de texto único ─────────────────────────
+        for selector in _SINGLE_SELECTORS:
+            try:
+                el = soup.select_one(selector)
+                if el is None:
+                    continue
+                raw = el.get_text(separator="", strip=True)
+                price = normalize_price(raw)
+                if price is not None:
+                    logger.info(f"[Amazon] Preço R$ {price:.2f} — seletor: '{selector}'")
+                    break
+            except Exception as exc:
+                logger.debug(f"[Amazon] Erro no seletor '{selector}': {exc}")
+    else:
+        logger.info(f"[Amazon] Preço R$ {price:.2f} — método: composto")
+
+    if price is None:
+        # ── Verifica se a Amazon retornou CAPTCHA ────────────────────────
+        if soup.find("form", {"action": "/errors/validateCaptcha"}):
+            logger.error("[Amazon] CAPTCHA detectado — requisição bloqueada.")
+        logger.warning("[Amazon] Nenhum seletor retornou preço válido.")
+        return None
+
+    result: dict = {
+        "price": price,
+        "preco_sem_promocao": None,
+        "preco_parcelado": None,
+        "parcelas": None,
+        "preco_pix": None,
+        "currency": "BRL",
+        "confidence": confidence,
+    }
+
+    # ── Preço sem promoção (listPrice / riscado) ──────────────────────────
+    for selector in _OLD_PRICE_SELECTORS:
         try:
             el = soup.select_one(selector)
             if el is None:
                 continue
-            raw = el.get_text(separator="", strip=True)
-            price = normalize_price(raw)
-            if price is not None:
-                logger.info(f"[Amazon] Preço R$ {price:.2f} — seletor: '{selector}'")
-                return {"price": price, "currency": "BRL", "confidence": 0.88}
+            old = normalize_price(el.get_text(separator="", strip=True))
+            if old is not None and old > price:
+                result["preco_sem_promocao"] = old
+                logger.info(f"[Amazon] Preço sem promoção R$ {old:.2f}")
+                break
         except Exception as exc:
-            logger.debug(f"[Amazon] Erro no seletor '{selector}': {exc}")
+            logger.debug(f"[Amazon] Erro seletor preço antigo '{selector}': {exc}")
 
-    # ── Verifica se a Amazon retornou CAPTCHA ────────────────────────────
-    if soup.find("form", {"action": "/errors/validateCaptcha"}):
-        logger.error("[Amazon] CAPTCHA detectado — requisição bloqueada.")
+    # ── Parcelamento ─────────────────────────────────────────────────────
+    for selector in _INSTALLMENT_SELECTORS:
+        try:
+            for el in soup.select(selector):
+                text = el.get_text(separator=" ", strip=True)
+                count, value = parse_installment(text)
+                if count is not None and value is not None:
+                    result["parcelas"] = count
+                    result["preco_parcelado"] = value
+                    logger.info(f"[Amazon] Parcelamento: {count}x R$ {value:.2f}")
+                    break
+            if result["parcelas"] is not None:
+                break
+        except Exception as exc:
+            logger.debug(f"[Amazon] Erro seletor parcelamento '{selector}': {exc}")
 
-    logger.warning("[Amazon] Nenhum seletor retornou preço válido.")
-    return None
+    return result
 
 
 def _extract_composed(soup: BeautifulSoup) -> Optional[float]:

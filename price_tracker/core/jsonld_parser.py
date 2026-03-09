@@ -101,26 +101,89 @@ def _parse_object(obj: dict) -> Optional[dict]:
 
 def _extract_from_offers(offers: dict) -> Optional[dict]:
     """
-    Extrai preço de um objeto 'offers' de schema.org.
-    Prioridade: price > lowPrice > highPrice
+    Extrai preço e campos adicionais de um objeto 'offers' de schema.org.
+
+    Campos extraídos (quando disponíveis):
+      - price             : preço promocional (price > lowPrice)
+      - preco_sem_promocao: preço sem desconto (highPrice quando price != highPrice)
+      - preco_pix         : preço à vista/Pix (via priceSpecification)
+      - preco_parcelado   : valor de cada parcela (via priceSpecification)
+      - parcelas          : número de parcelas (via priceSpecification)
     """
-    for field in ("price", "lowPrice", "highPrice"):
+    result: dict = {
+        "preco_sem_promocao": None,
+        "preco_parcelado": None,
+        "parcelas": None,
+        "preco_pix": None,
+    }
+
+    # ── Extrai preço promocional principal ────────────────────────────────
+    price = None
+    for field in ("price", "lowPrice"):
         raw = offers.get(field)
         if raw is None:
             continue
-
         price = normalize_price(str(raw))
         if price is not None:
             currency = offers.get("priceCurrency", "BRL")
-            logger.info(
-                f"[JSON-LD] Preço via campo '{field}': "
-                f"{price} {currency}"
-            )
-            return {
-                "price": price,
-                "currency": currency,
-                "confidence": 0.98,
-                "method": "jsonld",
-            }
+            logger.info(f"[JSON-LD] Preço via campo '{field}': {price} {currency}")
+            result["price"] = price
+            result["currency"] = currency
+            result["confidence"] = 0.98
+            result["method"] = "jsonld"
+            break
 
-    return None
+    if price is None:
+        return None
+
+    # ── highPrice como preço sem promoção (quando diferente do price) ─────
+    raw_high = offers.get("highPrice")
+    if raw_high is not None:
+        high = normalize_price(str(raw_high))
+        if high is not None and high > price:
+            result["preco_sem_promocao"] = high
+            logger.info(f"[JSON-LD] Preço sem promoção (highPrice): {high}")
+
+    # ── priceSpecification para parcelas e PIX ────────────────────────────
+    spec = offers.get("priceSpecification")
+    if isinstance(spec, list):
+        for item in spec:
+            _parse_price_specification(item, price, result)
+    elif isinstance(spec, dict):
+        _parse_price_specification(spec, price, result)
+
+    return result
+
+
+def _parse_price_specification(spec: dict, base_price: float, result: dict) -> None:
+    """
+    Analisa um único objeto priceSpecification e preenche result com
+    preco_pix, parcelas e preco_parcelado quando identificados.
+    """
+    if not isinstance(spec, dict):
+        return
+
+    spec_type = str(spec.get("@type", "")).lower()
+    name = str(spec.get("name", "")).lower()
+    raw_val = spec.get("price")
+    if raw_val is None:
+        return
+    val = normalize_price(str(raw_val))
+    if val is None:
+        return
+
+    # PIX / à vista: valor menor que o preço base ou nome contém "pix"/"vista"
+    if "pix" in name or "vista" in name or (val < base_price and result["preco_pix"] is None):
+        result["preco_pix"] = val
+        logger.info(f"[JSON-LD] Preço Pix/à vista via priceSpecification: {val}")
+        return
+
+    # Parcelamento: spec com numberOfPayments ou nome contendo parcela/installment
+    n_payments = spec.get("numberOfPayments") or spec.get("numberOfInstallments")
+    if n_payments:
+        try:
+            result["parcelas"] = int(n_payments)
+            result["preco_parcelado"] = val
+            logger.info(f"[JSON-LD] Parcelamento: {n_payments}x de {val}")
+        except (ValueError, TypeError):
+            pass

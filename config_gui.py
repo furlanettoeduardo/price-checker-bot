@@ -269,6 +269,35 @@ class ScraperEditorDialog(tk.Toplevel):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Helpers de auto-preenchimento de nome/loja (espelham main.py)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _gui_auto_name(url: str) -> str:
+    """Gera um nome legível a partir do último segmento do path da URL."""
+    try:
+        from urllib.parse import urlparse
+        parts = [p for p in urlparse(url).path.split("/") if p]
+        if parts:
+            slug = parts[-1].replace("-", " ").replace("_", " ").strip()
+            if slug and not slug.isdigit():
+                return slug[:80].title()
+        host = urlparse(url).netloc.lstrip("www.").split(".")[0]
+        return host.title()
+    except Exception:
+        return "Produto"
+
+
+def _gui_auto_store(url: str) -> str:
+    """Infere o nome da loja a partir do domínio da URL."""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url).netloc.lstrip("www.").split(".")[0]
+        return host.title()
+    except Exception:
+        return "?"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Diálogo de Produto (Adicionar / Editar)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -359,13 +388,9 @@ class ProductDialog(tk.Toplevel):
         url = self._url_entry.get().strip()
         if not url:
             return
-        try:
-            from urllib.parse import urlparse
-            host = urlparse(url).netloc.lstrip("www.").split(".")[0]
-            if host:
-                self._store_entry.insert(0, host.title())
-        except Exception:
-            pass
+        store = _gui_auto_store(url)
+        if store and store != "?":
+            self._store_entry.insert(0, store)
 
     def _save(self) -> None:
         name = self._name_entry.get().strip()
@@ -378,11 +403,13 @@ class ProductDialog(tk.Toplevel):
             messagebox.showwarning("Campo obrigatório", "Informe a URL do produto.", parent=self)
             return
 
-        result: dict = {"url": url}
-        if name:
-            result["name"] = name
-        if store:
-            result["store"] = store
+        # Auto-preenche nome e loja se não informados, usando a mesma lógica do main.py
+        if not name:
+            name = _gui_auto_name(url)
+        if not store:
+            store = _gui_auto_store(url)
+
+        result: dict = {"url": url, "name": name, "store": store}
         if selectors:
             result["price_selectors"] = selectors
         self.result = result

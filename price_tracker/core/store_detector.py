@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 # Mapeamento: fragmento do domínio → identificador do scraper
 # O fragmento é comparado com .lower() do domínio extraído da URL
 STORE_MAP: dict[str, str] = {
-    "kabum":         "kabum",
-    "pichau":        "pichau",
-    "terabyteshop":  "terabyte",
-    "terabyte":      "terabyte",
-    "amazon":        "amazon",
+    "kabum":           "kabum",
+    "pichau":          "pichau",
+    "terabyteshop":    "terabyte",
+    "terabyte":        "terabyte",
+    "amazon":          "amazon",
 }
 
 

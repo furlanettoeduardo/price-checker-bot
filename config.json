@@ -24,50 +24,18 @@
       ]
     },
     {
-      "name": "Ryzen 5 7600X",
-      "store": "Pichau",
-      "url": "https://www.pichau.com.br/processador-amd-ryzen-5-7600x",
-      "price_selectors": [
-        ".MuiTypography-h1",
-        "[class*='price']",
-        ".productPrice",
-        "span.price",
-        "p[class*='Price']"
-      ]
+      "url": "https://www.kabum.com.br/produto/706473/placa-de-video-asus-prime-rtx-5070-ti-o16g-nvidia-geforce-16gb-gddr7-ia-com-fp4-e-dlss4-edicao-oc-90yv0mf0-m0na00",
+      "store": "Kabum"
     },
     {
-      "name": "SSD Samsung 990 Pro 1TB",
-      "store": "Terabyte",
-      "url": "https://www.terabyteshop.com.br/produto/XXXXX/ssd-samsung-990-pro-1tb",
-      "price_selectors": [
-        ".prod-new-price span",
-        "#prod-new-price",
-        ".val_principal",
-        ".preco-original",
-        "span[id*='price']"
-      ]
+      "url": "https://www.terabyteshop.com.br/produto/37186/fonte-corsair-rm750e-750w-cybenetics-gold-pcie-51-full-modular-preto-cp-9020295-br",
+      "name": "Fonte Corsair Rm750E 750W Cybenetics Gold Pcie 51 Full Modular Preto Cp 9020295 ",
+      "store": "Terabyteshop"
     },
     {
-      "name": "Memória DDR5 16GB 6000MHz Kingston",
-      "store": "Kabum",
-      "url": "https://www.kabum.com.br/produto/XXXXX/memoria-ram-kingston-fury-beast-16gb-6000mhz-ddr5",
-      "price_selectors": [
-        "h4.finalPrice",
-        ".priceCard",
-        "[class*='finalPrice']",
-        "[data-testid='new-price']"
-      ]
-    },
-    {
-      "name": "Processador Intel Core i5-14600K23232",
-      "store": "Pichau",
-      "url": "https://www.pichau.com.br/processador-intel-core-i5-14600k",
-      "price_selectors": [
-        ".MuiTypography-h1",
-        "[class*='price']",
-        ".productPrice",
-        "span.price"
-      ]
+      "url": "https://www.pichau.com.br/gabinete-cooler-master-elite-481-wood-argb-mini-tower-lateral-de-vidro-com-3-fans-preto-e481-khnn-s00",
+      "name": "Gabinete Cooler Master Elite 481 Wood Argb Mini Tower Lateral De Vidro Com 3 Fan",
+      "store": "Pichau"
     }
   ]
 }

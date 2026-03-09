@@ -78,6 +78,25 @@ def is_installment_text(text: str) -> bool:
     return bool(re.search(r"\d+\s*[xX]\s*(de\s*)?R?\$", text))
 
 
+def parse_installment(text: str) -> "tuple[Optional[int], Optional[float]]":
+    """
+    Extrai parcelas e valor por parcela de um texto de parcelamento.
+
+    Exemplos aceitos:
+        "12x de R$ 291,66"  → (12, 291.66)
+        "10X R$389,90"      → (10, 389.90)
+        "6x R$ 649,90 sem juros" → (6, 649.90)
+
+    Retorna (None, None) se o padrão não for encontrado.
+    """
+    m = re.search(r"(\d+)\s*[xX]\s*(?:de\s+)?R?\$?\s*([\d.,]+)", text)
+    if not m:
+        return None, None
+    count = int(m.group(1))
+    value = normalize_price(m.group(2))
+    return count, value
+
+
 def is_old_price(element: Tag) -> bool:
     """
     Retorna True se o elemento HTML parece representar um preço antigo

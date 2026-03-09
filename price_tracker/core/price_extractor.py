@@ -129,6 +129,10 @@ def get_product_price(
     """
     base = {
         "price": None,
+        "preco_sem_promocao": None,
+        "preco_parcelado": None,
+        "parcelas": None,
+        "preco_pix": None,
         "currency": "BRL",
         "confidence": 0.0,
         "method": "failed",

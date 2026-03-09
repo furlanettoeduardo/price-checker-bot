@@ -27,7 +27,11 @@ SHEET_HEADERS = [
     "data",
     "produto",
     "loja",
-    "preco",
+    "preco",               # preço promocional
+    "preco_sem_promocao",  # preço sem desconto / de lista
+    "preco_pix",           # preço à vista / Pix
+    "preco_parcelado",     # valor de cada parcela
+    "parcelas",            # número de parcelas
     "url",
     "preco_minimo_historico",
 ]
@@ -156,12 +160,25 @@ def append_row(
     Retorna True se bem-sucedido, False em caso de erro.
     """
     try:
+        def _fmt(val) -> str:
+            """Formata float com 2 casas ou retorna string vazia para None."""
+            if val is None:
+                return ""
+            try:
+                return round(float(val), 2)
+            except (TypeError, ValueError):
+                return ""
+
         row = [
             data["data"],
             data["produto"],
             data["loja"],
             # Formata o preço como número com 2 casas decimais
             round(float(data["preco"]), 2),
+            _fmt(data.get("preco_sem_promocao")),
+            _fmt(data.get("preco_pix")),
+            _fmt(data.get("preco_parcelado")),
+            data.get("parcelas") or "",
             data["url"],
             round(float(min_price), 2) if min_price is not None else round(float(data["preco"]), 2),
         ]
