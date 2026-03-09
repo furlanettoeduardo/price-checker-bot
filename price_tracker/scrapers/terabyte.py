@@ -8,6 +8,7 @@ semânticas, o que torna os seletores relativamente estáveis.
 """
 
 import logging
+import re
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -53,6 +54,78 @@ _INSTALLMENT_SELECTORS = [
     "[class*='parcel']",
     "[id*='parcel']",
 ]
+
+
+def extract_supplementary(soup: BeautifulSoup) -> dict:
+    """
+    Extrai campos suplementares específicos da Terabyte Shop.
+
+    A Terabyte injeta preços via setTimeout(JS), populando:
+      .val-prod       → preço principal ("R$ 684,99")
+      #label-val-prod → texto de desconto Pix ("15% de desconto à vista no boleto ou pix")
+      .valParc        → total parcelado ("R$ 805,87")
+      .nParc          → número de parcelas ("12x")
+      .Parc           → valor por parcela ("R$ 67,16")
+
+    Como baixamos HTML estático (sem executar JS), extraímos esses valores
+    diretamente do texto-fonte do script via regex.
+    """
+    extra: dict = {}
+
+    # ── Extrai do script JS inline da Terabyte ────────────────────────────
+    for script in soup.find_all("script"):
+        text = script.string or ""
+        if ".valParc" not in text and ".nParc" not in text:
+            continue
+
+        # Parcelas: $('.nParc').text('12x');
+        m = re.search(r"\.nParc'\)\.text\('(\d+)x'\)", text)
+        if m:
+            extra["parcelas"] = int(m.group(1))
+
+        # Valor por parcela: $('.Parc').text('R$ 67,16');
+        m = re.search(r"\.Parc'\)\.text\('([^']+)'\)", text)
+        if m:
+            v = normalize_price(m.group(1))
+            if v:
+                extra["preco_parcelado"] = v
+
+        # Desconto Pix/boleto: $('#label-val-prod').text('15% de desconto ...');
+        m = re.search(r"#label-val-prod'\)\.text\('([^']*)'\)", text)
+        if m:
+            pct_m = re.search(r"(\d{1,2})%", m.group(1))
+            # Busca preço base no mesmo script: $('.val-prod').text('R$ 684,99');
+            price_m = re.search(r"\.val-prod'\)\.text\('([^']+)'\)", text)
+            if pct_m and price_m:
+                pct = int(pct_m.group(1))
+                base = normalize_price(price_m.group(1))
+                if base:
+                    pix = round(base * (1 - pct / 100), 2)
+                    extra["preco_pix"] = pix
+                    logger.info(f"[Terabyte/Supplementary] Pix: R$ {pix:.2f} ({pct}% sobre R$ {base:.2f})")
+        break  # script encontrado — sai do loop
+
+    # ── Fallback CSS para parcelas (quando JS executou via Playwright) ────
+    if not extra.get("parcelas"):
+        for selector in _INSTALLMENT_SELECTORS:
+            try:
+                for el in soup.select(selector):
+                    text = el.get_text(separator=" ", strip=True)
+                    count, value = parse_installment(text)
+                    if count and value and count >= 2:
+                        extra["parcelas"] = count
+                        extra["preco_parcelado"] = value
+                        logger.info(f"[Terabyte/Supplementary] CSS: {count}x R$ {value:.2f}")
+                        break
+                if extra.get("parcelas"):
+                    break
+            except Exception:
+                pass
+
+    if extra.get("parcelas"):
+        logger.info(f"[Terabyte/Supplementary] {extra['parcelas']}x R$ {extra.get('preco_parcelado')}")
+
+    return extra
 
 
 def extract(soup: BeautifulSoup) -> Optional[dict]:

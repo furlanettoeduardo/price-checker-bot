@@ -25,11 +25,12 @@ from typing import Optional
 
 from bs4 import BeautifulSoup
 
-from price_tracker.core.heuristics import extract_price_heuristic
+from price_tracker.core.heuristics import extract_price_heuristic, extract_supplementary_fields
 from price_tracker.core.jsonld_parser import extract_price_jsonld
 from price_tracker.core.store_detector import detect_store
 from price_tracker.utils.html_fetcher import fetch_page
 from price_tracker.utils.price_parser import normalize_price
+from price_tracker.scrapers import universal as _universal_scraper
 
 logger = logging.getLogger(__name__)
 
@@ -108,14 +109,18 @@ def _extract_price_css(
 def get_product_price(
     url: str,
     css_selectors: Optional[list[str]] = None,
+    use_playwright: bool = False,
 ) -> dict:
     """
     Extrai o preço de um produto de forma robusta usando estratégia em camadas.
 
     Parâmetros
     ----------
-    url           : URL completa da página do produto
-    css_selectors : Seletores CSS do config.json (usados na camada 3)
+    url            : URL completa da página do produto
+    css_selectors  : Seletores CSS do config.json (usados na camada 3)
+    use_playwright : Se True, usa Playwright+stealth para baixar a página —
+                     necessário para sites que renderizam preços via JavaScript
+                     ou que bloqueiam requests/cloudscraper com Cloudflare UAM.
 
     Retorna
     -------
@@ -140,35 +145,83 @@ def get_product_price(
     }
 
     # ── Download da página (com cache) ────────────────────────────────────
-    soup = fetch_page(url)
+    soup = fetch_page(url, use_playwright=use_playwright)
     if soup is None:
         logger.error(f"Impossível acessar: {url}")
         return base
 
+    # Detecta loja uma vez — reutilizada em todas as camadas abaixo
+    store_id = detect_store(url)
+
     # ── Camada 1: JSON-LD ─────────────────────────────────────────────────
     result = extract_price_jsonld(soup)
     if result and result.get("price"):
-        return {**base, **result}
+        return _fill_supplementary({**base, **result}, soup, store_id)
 
     # ── Camada 2: Scraper específico de loja ──────────────────────────────
-    store_id = detect_store(url)
     if store_id:
         result = extract_price_store(soup, store_id)
         if result and result.get("price"):
-            return {**base, **result}
-    else:
-        logger.debug("Loja não reconhecida — pulando scraper de loja.")
+            result["method"] = "store"
+            return _fill_supplementary({**base, **result}, soup, store_id)
+
+    # ── Camada 2b: Scraper universal (Shopify, VTEX, WooCommerce, CSS genérico) ─
+    result = _universal_scraper.extract(soup)
+    if result and result.get("price"):
+        result["method"] = "universal"
+        return _fill_supplementary({**base, **result}, soup, store_id)
 
     # ── Camada 3: Seletores CSS do config.json ────────────────────────────
     if css_selectors:
         result = _extract_price_css(soup, css_selectors)
         if result and result.get("price"):
-            return {**base, **result}
+            return _fill_supplementary({**base, **result}, soup, store_id)
 
     # ── Camada 4: Heurística (fallback) ───────────────────────────────────
     result = extract_price_heuristic(soup)
     if result and result.get("price"):
-        return {**base, **result}
+        return _fill_supplementary({**base, **result}, soup, store_id)
 
     logger.error(f"Todos os métodos de extração falharam para: {url}")
     return base
+
+def _fill_supplementary(
+    result: dict,
+    soup: BeautifulSoup,
+    store_id: Optional[str] = None,
+) -> dict:
+    """
+    Preenche preco_pix, preco_parcelado e parcelas em duas etapas:
+      1. Chama extract_supplementary() do scraper específico da loja (se existir)
+      2. Fallback genérico: regex no texto completo da página
+    Campos já preenchidos não são sobrescritos.
+    """
+    SUPP_FIELDS = ("preco_sem_promocao", "preco_pix", "preco_parcelado", "parcelas")
+
+    if all(result.get(f) is not None for f in SUPP_FIELDS):
+        return result  # tudo já preenchido
+
+    # ── Etapa 1: scraper específico da loja (ex: Kabum → __NEXT_DATA__) ─────
+    if store_id:
+        try:
+            module = importlib.import_module(f"price_tracker.scrapers.{store_id}")
+            if hasattr(module, "extract_supplementary"):
+                store_supp = module.extract_supplementary(soup)
+                for field, value in store_supp.items():
+                    if result.get(field) is None and value is not None:
+                        result[field] = value
+                        logger.debug(
+                            f"[Supplementary/{store_id}] {field} = {value}"
+                        )
+        except Exception as exc:
+            logger.debug(f"[Supplementary] Erro no scraper de '{store_id}': {exc}")
+
+    if all(result.get(f) is not None for f in SUPP_FIELDS):
+        return result
+
+    # ── Etapa 2: fallback genérico (regex no texto) ──────────────────────
+    supplementary = extract_supplementary_fields(soup)
+    for field, value in supplementary.items():
+        if result.get(field) is None and value is not None:
+            result[field] = value
+    return result

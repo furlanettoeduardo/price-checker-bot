@@ -25,6 +25,7 @@
     },
     {
       "url": "https://www.kabum.com.br/produto/706473/placa-de-video-asus-prime-rtx-5070-ti-o16g-nvidia-geforce-16gb-gddr7-ia-com-fp4-e-dlss4-edicao-oc-90yv0mf0-m0na00",
+      "name": "Placa De Video Asus Prime Rtx 5070 Ti O16G Nvidia Geforce 16Gb Gddr7 Ia Com Fp4",
       "store": "Kabum"
     },
     {
@@ -41,6 +42,24 @@
       "url": "https://www.pichau.com.br/placa-mae-gigabyte-b760m-gaming-x-gen5-ddr5-lga1700-m-atx-chipset-intel-b760-b760m-gaming-x-ddr5-gen5",
       "name": "Placa Mae Gigabyte B760M Gaming X Gen5 Ddr5 Lga1700 M Atx Chipset Intel B760 B76",
       "store": "Pichau"
+    },
+    {
+      "url": "https://loja.cockpitextremeracing.com.br/products/cockpit-speedtrack-st?variant=51124156596505",
+      "name": "Cockpit Speedtrack St",
+      "store": "Loja",
+      "use_playwright": true,
+      "price_selectors": [
+        "#product-info > div.col-span-full.w-full.md\\:col-start-8.md\\:col-end-12 > div > div.mt-6.flex.flex-col.space-y-1.md\\:mt-8 > div.flex.items-center.gap-4.w-full > h3"
+      ]
+    },
+    {
+      "url": "https://www.exootics.com.br/produtos/uniforme-t1-champions-2025-b5zvt/",
+      "name": "Uniforme T1 Champions 2025 B5Zvt",
+      "store": "Exootics",
+      "use_playwright": true,
+      "price_selectors": [
+        "#price_display"
+      ]
     }
   ]
 }

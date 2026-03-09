@@ -56,6 +56,16 @@ _INSTALLMENT_SELECTORS = [
 ]
 
 
+def extract_supplementary(soup: BeautifulSoup) -> dict:
+    """
+    Extrai apenas os campos suplementares (sem exigir preço via CSS).
+    Chamado pelo price_extractor quando JSON-LD ou outra camada já
+    encontrou o preço principal mas ainda faltam preco_sem_promocao,
+    preco_pix, parcelas e preco_parcelado.
+    """
+    return _extract_from_next_data(soup)
+
+
 def extract(soup: BeautifulSoup) -> Optional[dict]:
     """
     Extrai preço e campos adicionais de uma página de produto da Kabum.
@@ -101,33 +111,42 @@ def extract(soup: BeautifulSoup) -> Optional[dict]:
         "confidence": 0.90,
     }
 
-    # ── Preço sem promoção (riscado) ─────────────────────────────────────
-    for selector in _OLD_PRICE_SELECTORS:
-        try:
-            el = soup.select_one(selector)
-            if el is None:
-                continue
-            old = normalize_price(el.get("content") or el.get_text(separator=" ", strip=True))
-            if old is not None and old > price:
-                result["preco_sem_promocao"] = old
-                logger.info(f"[Kabum] Preço sem promoção R$ {old:.2f}")
-                break
-        except Exception as exc:
-            logger.debug(f"[Kabum] Erro seletor preço antigo '{selector}': {exc}")
+    # ── __NEXT_DATA__ primeiro (fonte mais confiável na Kabum) ────────────
+    # Preenche preco_sem_promocao e preco_pix a partir do JSON injetado
+    next_extra = _extract_from_next_data(soup)
+    for field, value in next_extra.items():
+        if value is not None:
+            result[field] = value  # __NEXT_DATA__ tem prioridade
 
-    # ── Preço Pix ────────────────────────────────────────────────────────
-    for selector in _PIX_SELECTORS:
-        try:
-            el = soup.select_one(selector)
-            if el is None:
-                continue
-            pix = normalize_price(el.get("content") or el.get_text(separator=" ", strip=True))
-            if pix is not None and pix > 0:
-                result["preco_pix"] = pix
-                logger.info(f"[Kabum] Preço Pix R$ {pix:.2f}")
-                break
-        except Exception as exc:
-            logger.debug(f"[Kabum] Erro seletor Pix '{selector}': {exc}")
+    # ── Preço sem promoção (riscado) — fallback CSS ───────────────────────
+    if result["preco_sem_promocao"] is None:
+        for selector in _OLD_PRICE_SELECTORS:
+            try:
+                el = soup.select_one(selector)
+                if el is None:
+                    continue
+                old = normalize_price(el.get("content") or el.get_text(separator=" ", strip=True))
+                if old is not None and old > price:
+                    result["preco_sem_promocao"] = old
+                    logger.info(f"[Kabum] Preço sem promoção R$ {old:.2f}")
+                    break
+            except Exception as exc:
+                logger.debug(f"[Kabum] Erro seletor preço antigo '{selector}': {exc}")
+
+    # ── Preço Pix — fallback CSS (só aceita se estritamente menor que o preço) ─
+    if result["preco_pix"] is None:
+        for selector in _PIX_SELECTORS:
+            try:
+                el = soup.select_one(selector)
+                if el is None:
+                    continue
+                pix = normalize_price(el.get("content") or el.get_text(separator=" ", strip=True))
+                if pix is not None and 0 < pix < price:
+                    result["preco_pix"] = pix
+                    logger.info(f"[Kabum] Preço Pix R$ {pix:.2f}")
+                    break
+            except Exception as exc:
+                logger.debug(f"[Kabum] Erro seletor Pix '{selector}': {exc}")
 
     # ── Parcelamento ─────────────────────────────────────────────────────
     for selector in _INSTALLMENT_SELECTORS:
@@ -145,13 +164,6 @@ def extract(soup: BeautifulSoup) -> Optional[dict]:
         except Exception as exc:
             logger.debug(f"[Kabum] Erro seletor parcelamento '{selector}': {exc}")
 
-    # ── Suplementa com dados do Next.js (__NEXT_DATA__) ──────────────────
-    # Kabum usa Next.js: prices.price = preço regular, priceWithDiscount = promocional
-    next_extra = _extract_from_next_data(soup)
-    for field, value in next_extra.items():
-        if result.get(field) is None and value is not None:
-            result[field] = value
-
     return result
 
 
@@ -159,11 +171,14 @@ def _extract_from_next_data(soup: BeautifulSoup) -> dict:
     """
     Extrai preços adicionais do bloco __NEXT_DATA__ injetado pelo Next.js.
 
-    Kabum inclui em `pageProps.product.prices`:
-      - price             : preço regular (sem desconto)
-      - priceWithDiscount : preço promocional (o que o cliente paga)
-      - discountPercentage: percentual de desconto
-    Quando há desconto, `price` é o `preco_sem_promocao` que buscamos.
+    Estrutura real de `pageProps.product.prices` na Kabum:
+      - oldPrice          : preço original sem desconto (= preco_sem_promocao)
+      - priceWithDiscount : preço promocional que o cliente paga (= price)
+      - price             : total do parcelamento (preço * fator do cartão)
+      - discountPercentage: percentual de desconto extra no Pix
+
+    O preço Pix não aparece como número concreto na página —
+    é calculado como: priceWithDiscount × (1 − discountPercentage / 100).
     """
     extra: dict = {}
     script = soup.find("script", {"id": "__NEXT_DATA__"})
@@ -178,18 +193,26 @@ def _extract_from_next_data(soup: BeautifulSoup) -> dict:
                 .get("product", {})
                 .get("prices", {})
         )
-        regular  = prices.get("price")
-        promo    = prices.get("priceWithDiscount")
-        discount = prices.get("discountPercentage", 0)
 
-        if discount and discount > 0 and regular and promo and regular != promo:
-            old = normalize_price(str(regular))
-            if old is not None and old > 0:
-                extra["preco_sem_promocao"] = old
-                logger.info(
-                    f"[Kabum/__NEXT_DATA__] Preço sem promoção: R$ {old:.2f} "
-                    f"(desconto {discount}%)"
-                )
+        old_price   = prices.get("oldPrice")           # preço riscado
+        promo_price = prices.get("priceWithDiscount")  # preço atual com desconto
+        pix_pct     = prices.get("discountPercentage", 0)  # % extra no Pix
+
+        # ── Preço sem promoção (riscado) ─────────────────────────────────
+        if old_price and promo_price and float(old_price) > float(promo_price):
+            old = round(float(old_price), 2)
+            extra["preco_sem_promocao"] = old
+            logger.info(f"[Kabum/__NEXT_DATA__] Preço sem promoção: R$ {old:.2f}")
+
+        # ── Preço Pix (calculado a partir da porcentagem de desconto) ─────
+        if promo_price and pix_pct and float(pix_pct) > 0:
+            pix = round(float(promo_price) * (1 - float(pix_pct) / 100), 2)
+            extra["preco_pix"] = pix
+            logger.info(
+                f"[Kabum/__NEXT_DATA__] Preço Pix: R$ {pix:.2f} "
+                f"({pix_pct}% de desconto sobre R$ {promo_price:.2f})"
+            )
+
     except Exception as exc:
         logger.debug(f"[Kabum] Erro ao parsear __NEXT_DATA__: {exc}")
 

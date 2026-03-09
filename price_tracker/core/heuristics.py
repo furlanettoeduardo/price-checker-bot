@@ -128,6 +128,68 @@ def extract_price_heuristic(soup: BeautifulSoup) -> Optional[dict]:
     return {k: v for k, v in best.items() if not k.startswith("_")}
 
 
+def extract_supplementary_fields(soup: BeautifulSoup) -> dict:
+    """
+    Extrai campos suplementares de precificacao de qualquer pagina HTML:
+      - preco_pix   : preco a vista / Pix
+      - preco_parcelado : valor de cada parcela
+      - parcelas    : numero de parcelas
+
+    Funciona por regex sobre o texto completo da pagina — independe de
+    seletores CSS especificos, portanto cobre qualquer loja.
+    Deve ser chamada apos o preco principal ja ter sido encontrado; so
+    preenche campos que ainda estejam None.
+    """
+    result = {"preco_pix": None, "preco_parcelado": None, "parcelas": None}
+
+    full_text = soup.get_text(separator=" ", strip=True)
+
+    # ── Preco Pix / A vista ──────────────────────────────────────────────
+    # Padroes: "R$ 1.299,90 no Pix", "Pix R$ 1.299,90", "R$ 1.299,90 a vista"
+    _PIX_RE = re.compile(
+        r"(?:"
+        r"(?:pix|\bvista\b|\ba\svista\b)[^\d]{0,20}R?\$?\s*([\d.,]+)"
+        r"|"
+        r"R?\$?\s*([\d.,]+)[^\d]{0,30}(?:pix|no\s+pix|\ba\s+vista\b|\bvista\b)"
+        r")",
+        re.IGNORECASE,
+    )
+    for m in _PIX_RE.finditer(full_text):
+        raw = m.group(1) or m.group(2)
+        if not raw:
+            continue
+        pix = normalize_price(raw)
+        if pix is not None and pix > 0:
+            result["preco_pix"] = pix
+            logger.info(f"[Suplementar] Preco Pix/Vista encontrado: R$ {pix:.2f}")
+            break
+
+    # ── Parcelamento ────────────────────────────────────────────────────
+    # Padroes: "12x de R$ 208,32", "em 10x de R$389,90", "6X R$ 649,90"
+    _INSTALL_RE = re.compile(
+        r"(\d{1,2})\s*[xX]\s*(?:de\s+)?R?\$?\s*([\d.,]+)",
+    )
+    best_count = None
+    best_value = None
+    for m in _INSTALL_RE.finditer(full_text):
+        count = int(m.group(1))
+        value = normalize_price(m.group(2))
+        if value is None or count < 2:
+            continue
+        # Prefere o maior numero de parcelas (oferta principal da loja)
+        if best_count is None or count > best_count:
+            best_count = count
+            best_value = value
+    if best_count is not None:
+        result["parcelas"] = best_count
+        result["preco_parcelado"] = best_value
+        logger.info(
+            f"[Suplementar] Parcelamento encontrado: {best_count}x R$ {best_value:.2f}"
+        )
+
+    return result
+
+
 def _in_ignored_section(element: Tag) -> bool:
     """
     Verifica se o elemento está dentro de uma seção que deve ser ignorada.

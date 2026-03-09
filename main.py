@@ -201,9 +201,10 @@ def run() -> None:
     # ── Itera sobre os produtos ────────────────────────────────────────────
     for idx, product in enumerate(products, start=1):
         url      = product.get("url", "").strip()
-        name     = product.get("name", "").strip() or _auto_name(url, idx)
+        name     = (product.get("name", "").strip() or _auto_name(url, idx)).strip()
         store    = product.get("store", "").strip() or _auto_store(url)
-        selectors = product.get("price_selectors", [])
+        selectors     = product.get("price_selectors", [])
+        use_playwright = product.get("use_playwright", False)
 
         logger.info(f"[{idx}/{len(products)}] Verificando: {name} ({store})")
 
@@ -221,7 +222,7 @@ def run() -> None:
             continue
 
         # Extrai o preço — tenta em ordem: JSON-LD → scraper de loja → CSS → heurística
-        extraction = get_product_price(url, css_selectors=selectors)
+        extraction = get_product_price(url, css_selectors=selectors, use_playwright=use_playwright)
         price = extraction.get("price")
         method = extraction.get("method", "?")
         confidence = extraction.get("confidence", 0.0)

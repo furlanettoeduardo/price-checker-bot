@@ -1,12 +1,13 @@
 """
 price_tracker/scrapers
 -----------------------
-Scrapers específicos de lojas disponíveis:
+Scrapers específicos e universal disponíveis:
 
-  kabum    → price_tracker.scrapers.kabum
-  pichau   → price_tracker.scrapers.pichau
-  amazon   → price_tracker.scrapers.amazon
-  terabyte → price_tracker.scrapers.terabyte
+  universal  → price_tracker.scrapers.universal  (qualquer loja — Shopify/VTEX/WooCommerce/CSS)
+  kabum      → price_tracker.scrapers.kabum
+  pichau     → price_tracker.scrapers.pichau
+  amazon     → price_tracker.scrapers.amazon
+  terabyte   → price_tracker.scrapers.terabyte
 
 Como adicionar uma nova loja
 ----------------------------
@@ -19,4 +20,7 @@ Como adicionar uma nova loja
 3. Adicione o mapeamento em price_tracker/core/store_detector.py → STORE_MAP:
 
        "nomedoloja": "nome_da_loja",
+
+Nota: o scraper universal é executado automaticamente para qualquer loja,
+não precisando de mapeamento no STORE_MAP.
 """

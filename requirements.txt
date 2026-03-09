@@ -18,6 +18,6 @@ pandas>=2.2.2
 # Opcional: detecção de domínio mais precisa (recomendado)
 tldextract>=3.4.0
 
-# Opcional: scraping de páginas com JavaScript / Cloudflare Under Attack Mode
-# playwright install chromium
-# pip install playwright
+# Scraping de páginas com JavaScript / Cloudflare Under Attack Mode
+playwright>=1.43.0
+playwright-stealth>=1.0.6
