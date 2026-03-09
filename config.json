@@ -3,25 +3,24 @@
     "credentials_file": "credentials.json",
     "spreadsheet_name": "Price Tracker"
   },
-
   "telegram": {
     "enabled": false,
     "bot_token": "SEU_BOT_TOKEN_AQUI",
     "chat_id": "SEU_CHAT_ID_AQUI",
     "alert_on_new_low": true
   },
-
   "products": [
     {
-      "name": "RTX 4070 Super Zotac",
+      "name": "Memória RAM Corsair Vengeance, 32GB (2X16GB), 6000MHz, DDR5, CL36, Preto - CMK32GX5M2E6000C36",
       "store": "Kabum",
-      "url": "https://www.kabum.com.br/produto/XXXXX/placa-de-video-zotac-gaming-geforce-rtx-4070-super",
+      "url": "https://www.kabum.com.br/produto/506124/memoria-ram-corsair-vengeance-32gb-2x16gb-6000mhz-ddr5-cl36-preto-cmk32gx5m2e6000c36",
       "price_selectors": [
         "h4.finalPrice",
         ".priceCard",
         "[class*='finalPrice']",
         "[data-testid='new-price']",
-        ".regularPrice"
+        ".regularPrice",
+        "#main-content > div.flex.flex-col.gap-8.tablet\\:gap-16.desktop\\:gap-32.bg-white > div.container-lg.relative > div.grid.grid-cols-4.tablet\\:grid-cols-6.desktop\\:grid-cols-12.gap-16.desktop\\:gap-32.mt-16 > div.flex.flex-col.col-span-4.tablet\\:col-span-6.desktop\\:col-span-3.order-3.desktop\\:top-\\[88px\\].desktop\\:z-\\[9\\].h-fit.gap-16.desktop\\:sticky > div.w-full.p-8.rounded-8.border-solid.border.border-black-400 > h4"
       ]
     },
     {
@@ -60,7 +59,7 @@
       ]
     },
     {
-      "name": "Processador Intel Core i5-14600K",
+      "name": "Processador Intel Core i5-14600K23232",
       "store": "Pichau",
       "url": "https://www.pichau.com.br/processador-intel-core-i5-14600k",
       "price_selectors": [
