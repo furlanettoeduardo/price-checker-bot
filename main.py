@@ -21,7 +21,7 @@ import logging
 import sys
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Módulos internos do projeto
@@ -34,7 +34,13 @@ from notifier import notify_new_low, notify_error
 # ──────────────────────────────────────────────────────────────────────────────
 # Caminhos e constantes
 # ──────────────────────────────────────────────────────────────────────────────
-BASE_DIR = Path(__file__).parent
+# When packaged by PyInstaller, sys.executable points to the .exe;
+# use its parent so config.json and logs/ live next to the executable.
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).parent
+else:
+    BASE_DIR = Path(__file__).parent
+
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "price_tracker.log"
@@ -176,7 +182,11 @@ def _auto_store(url: str) -> str:
 # Lógica principal
 # ──────────────────────────────────────────────────────────────────────────────
 
-def run() -> None:
+def run(on_progress: Optional[Callable[[int, int, str], None]] = None) -> None:
+    """
+    on_progress(current, total, product_name) é chamado antes de cada produto
+    para atualizar barras de progresso externas (ex.: GUI).
+    """
     logger = logging.getLogger(__name__)
     today = str(date.today())  # Formato: "YYYY-MM-DD"
 
@@ -220,6 +230,12 @@ def run() -> None:
         store    = product.get("store", "").strip() or _auto_store(url)
         selectors     = product.get("price_selectors", [])
         use_playwright = product.get("use_playwright", False)
+
+        if on_progress is not None:
+            try:
+                on_progress(idx, len(products), name)
+            except Exception:
+                pass
 
         logger.info(f"[{idx}/{len(products)}] Verificando: {name} ({store})")
 

@@ -10,7 +10,10 @@ Responsável por baixar páginas HTML com:
 
 import logging
 import random
+import subprocess
+import sys
 import time
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -202,6 +205,86 @@ def _try_cloudscraper(url: str) -> Optional[BeautifulSoup]:
         return None
 
 
+def _install_playwright_browser() -> bool:
+    """
+    Tenta instalar o Chromium via o driver do Playwright embutido ou do PATH.
+    Útil quando o binário não está presente na máquina de destino.
+    Retorna True se o install pareceu bem-sucedido.
+    """
+    logger.warning("[Playwright] Binário do Chromium não encontrado. Tentando instalar automaticamente...")
+
+    # ── Modo frozen (PyInstaller .exe) ──────────────────────────────────────
+    # O Playwright espera os browsers em _internal/playwright/driver/package/.local-browsers/
+    # Tenta copiar de %LOCALAPPDATA%\ms-playwright\ (onde 'playwright install' baixa)
+    if getattr(sys, "frozen", False):
+        import os
+        import shutil as _shutil
+        ms_pw = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright"
+        pkg_browsers = Path(sys.executable).parent / "_internal" / "playwright" / "driver" / "package" / ".local-browsers"
+        pkg_browsers.mkdir(parents=True, exist_ok=True)
+
+        if ms_pw.is_dir():
+            copied = False
+            for item in ms_pw.iterdir():
+                if item.is_dir() and item.name.startswith(("chromium_headless_shell", "chromium", "ffmpeg", "winldd")):
+                    dst = pkg_browsers / item.name
+                    if not dst.exists():
+                        logger.info(f"[Playwright] Copiando {item.name} para o bundle...")
+                        _shutil.copytree(str(item), str(dst))
+                        copied = True
+            if copied:
+                logger.info("[Playwright] Browsers copiados com sucesso.")
+                return True
+
+        # ms-playwright não encontrado ou vazio — tenta baixar via playwright driver embutido
+        internal_driver = Path(sys.executable).parent / "_internal" / "playwright" / "driver"
+        for cli in [internal_driver / "playwright.cmd", internal_driver / "playwright.exe"]:
+            if cli.exists():
+                import os as _os
+                env = _os.environ.copy()
+                env["PLAYWRIGHT_BROWSERS_PATH"] = str(pkg_browsers.parent)
+                try:
+                    result = subprocess.run(
+                        [str(cli), "install", "chromium"],
+                        capture_output=True, text=True, timeout=300, env=env
+                    )
+                    if result.returncode == 0:
+                        logger.info("[Playwright] Chromium instalado via driver embutido.")
+                        return True
+                except Exception as exc:
+                    logger.debug(f"[Playwright] Falha ao instalar via {cli}: {exc}")
+
+        logger.error("[Playwright] Não foi possível instalar o Chromium automaticamente no bundle.")
+        return False
+
+    # ── Modo desenvolvimento ─────────────────────────────────────────────────
+    candidates = []
+    import shutil as _shutil
+    pw_in_path = _shutil.which("playwright")
+    if pw_in_path:
+        candidates.append(Path(pw_in_path))
+    candidates.append(None)  # sentinela → usa `python -m playwright`
+
+    for candidate in candidates:
+        try:
+            if candidate is None:
+                cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+            else:
+                cmd = [str(candidate), "install", "chromium"]
+
+            logger.info(f"[Playwright] Rodando: {' '.join(str(c) for c in cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if result.returncode == 0:
+                logger.info("[Playwright] Chromium instalado com sucesso.")
+                return True
+            logger.warning(f"[Playwright] Install retornou {result.returncode}: {result.stderr[:200]}")
+        except Exception as exc:
+            logger.debug(f"[Playwright] Falha ao tentar instalar com {candidate}: {exc}")
+
+    logger.error("[Playwright] Não foi possível instalar o Chromium automaticamente.")
+    return False
+
+
 def _try_playwright(url: str, timeout_ms: int = 30_000) -> Optional[BeautifulSoup]:
     """
     Tenta baixar a página usando Playwright com modo stealth ativado.
@@ -287,5 +370,42 @@ def _try_playwright(url: str, timeout_ms: int = 30_000) -> Optional[BeautifulSou
         return soup
 
     except Exception as exc:
+        exc_str = str(exc)
+        # Chromium binary missing — tenta instalar e rodar uma segunda vez
+        if "Executable doesn't exist" in exc_str and _install_playwright_browser():
+            logger.info(f"[Playwright] Re-tentando após instalação do Chromium: {url}")
+            try:
+                with _pw() as pw:
+                    browser = pw.chromium.launch(
+                        headless=True,
+                        args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+                    )
+                    context = browser.new_context(
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/122.0.0.0 Safari/537.36"
+                        ),
+                        locale="pt-BR",
+                        timezone_id="America/Sao_Paulo",
+                        viewport={"width": 1366, "height": 768},
+                    )
+                    page = context.new_page()
+                    if _has_stealth:
+                        _StealthCls().apply_stealth_sync(page)
+                    try:
+                        response = page.goto(url, timeout=timeout_ms, wait_until="networkidle")
+                    except Exception:
+                        response = page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                    if response is not None and response.status < 400:
+                        html = page.content()
+                        browser.close()
+                        soup = BeautifulSoup(html, "lxml")
+                        logger.info(f"[Playwright] Página obtida com sucesso (retry): {url}")
+                        return soup
+                    browser.close()
+            except Exception as retry_exc:
+                logger.warning(f"[Playwright] Falha no retry após install: {retry_exc}")
+
         logger.warning(f"[Playwright] Falha em {url}: {exc}")
         return None

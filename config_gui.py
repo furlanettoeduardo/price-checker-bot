@@ -15,13 +15,20 @@ A janela possui três abas:
 import ast
 import json
 import re
+import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-CONFIG_PATH         = Path(__file__).parent / "config.json"
-STORE_DETECTOR_PATH = Path(__file__).parent / "price_tracker" / "core" / "store_detector.py"
-SCRAPERS_DIR        = Path(__file__).parent / "price_tracker" / "scrapers"
+# Funciona tanto em .py quanto em .exe (PyInstaller)
+if getattr(sys, "frozen", False):
+    _BASE = Path(sys.executable).parent
+else:
+    _BASE = Path(__file__).parent
+
+CONFIG_PATH         = _BASE / "config.json"
+STORE_DETECTOR_PATH = _BASE / "price_tracker" / "core" / "store_detector.py"
+SCRAPERS_DIR        = _BASE / "price_tracker" / "scrapers"
 
 # IDs dos scrapers que já vêm com o projeto
 _BUILTIN_SCRAPER_IDS = {"kabum", "pichau", "amazon", "terabyte"}
