@@ -263,7 +263,15 @@ def _try_playwright(url: str, timeout_ms: int = 30_000) -> Optional[BeautifulSou
             else:
                 logger.debug("[Playwright] playwright-stealth não disponível — stealth parcial.")
 
-            response = page.goto(url, timeout=timeout_ms, wait_until="networkidle")
+            try:
+                response = page.goto(url, timeout=timeout_ms, wait_until="networkidle")
+            except Exception as exc:
+                # Alguns sites mantêm conexões abertas e nunca chegam a networkidle.
+                # Tenta novamente com domcontentloaded para não travar o scraping.
+                logger.warning(
+                    f"[Playwright] networkidle falhou ({exc}). Tentando domcontentloaded: {url}"
+                )
+                response = page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
 
             if response is None or response.status >= 400:
                 status = response.status if response else "?"

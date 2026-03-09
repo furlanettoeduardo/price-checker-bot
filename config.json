@@ -64,6 +64,11 @@
       "url": "https://www.kingssimuladores.com.br/71knhkwon-/pedal-active-moza-racing-mbooster-com-feedback-suporte",
       "name": "Pedal Active Moza Racing Mbooster Com Feedback Suporte",
       "store": "Kingssimuladores"
+    },
+    {
+      "url": "https://loja.prsim.com.br/produto/pedal-prs-3-sport-base-de-fixacao/",
+      "name": "Pedal Prs 3 Sport Base De Fixacao",
+      "use_playwright": true
     }
   ]
 }
