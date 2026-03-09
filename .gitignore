@@ -1,0 +1,38 @@
+# Credenciais do Google — NUNCA faça commit deste arquivo!
+credentials.json
+
+# Logs gerados em execução
+logs/
+*.log
+
+# Ambientes virtuais Python
+venv/
+.venv/
+env/
+.env/
+
+# Cache do Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Arquivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
+
+# Variáveis de ambiente / segredos locais
+.env
+*.env
+
+# Distribuição / build
+dist/
+build/
+*.egg-info/
