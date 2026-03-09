@@ -28,7 +28,7 @@ from typing import Optional, Callable
 # ──────────────────────────────────────────────────────────────────────────────
 # Extrator de preço com estratégia em camadas (JSON-LD → loja → CSS → heurística)
 from price_tracker.core.price_extractor import get_product_price
-from sheets import append_row, connect_to_sheets, get_min_price, is_duplicate
+from sheets import append_row, connect_to_sheets, get_min_price, is_duplicate, is_duplicate_shopping
 from notifier import notify_new_low, notify_error
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -129,15 +129,130 @@ def validate_product(product: dict) -> Optional[str]:
     Valida se um produto do config.json tem todos os campos obrigatórios.
     Retorna None se válido, ou uma string de erro se inválido.
 
-    Apenas 'url' é obrigatório. 'name' e 'store' são preenchidos
-    automaticamente se omitidos. 'price_selectors' é sempre opcional.
+    Modo URL (padrão): 'url' é obrigatório.
+    Modo shopping: 'name' é obrigatório.
     """
+    mode = product.get("search_mode", "url")
+    if mode == "shopping":
+        if not product.get("name", "").strip():
+            return "Modo shopping requer o campo 'name'"
+        return None
+    # Modo URL
     if not product.get("url", "").strip():
         return "Campo 'url' ausente ou vazio"
     selectors = product.get("price_selectors")
     if selectors is not None and not isinstance(selectors, list):
         return "price_selectors deve ser uma lista de strings (ou omitido)"
     return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Modo Shopping: busca por palavras-chave em agregadores / APIs
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _run_shopping_product(
+    product: dict,
+    sheet,
+    today: str,
+    telegram_enabled: bool,
+    telegram_token: str,
+    telegram_chat: str,
+    alert_on_new_low: bool,
+) -> dict:
+    """
+    Executa a busca por palavras-chave nos agregadores configurados
+    (Mercado Livre API + Zoom.com.br) e grava cada oferta como uma
+    linha separada na planilha.
+
+    Retorna dict com: ok, skip, error, new_lows
+    """
+    logger = logging.getLogger(__name__)
+
+    from price_tracker.search.mercadolivre import search as ml_search
+    from price_tracker.search.zoom import search as zoom_search
+
+    name        = product.get("name", "").strip()
+    keywords    = product.get("keywords", [])
+    max_results = int(product.get("max_results", 10))
+    min_price   = product.get("min_price")
+    max_price   = product.get("max_price")
+    sources     = product.get("sources", ["mercadolivre", "zoom"])
+
+    # Monta query: nome + até 2 keywords extras
+    query_parts = [name]
+    if keywords:
+        query_parts.extend(keywords[:2])
+    query = " ".join(query_parts)
+
+    logger.info(f"  → Busca shopping: '{query}' | max={max_results}")
+
+    offers: list[dict] = []
+    if "mercadolivre" in sources:
+        try:
+            ml_offers = ml_search(query, max_results=max_results, min_price=min_price, max_price=max_price)
+            offers.extend(ml_offers)
+            logger.info(f"  → Mercado Livre: {len(ml_offers)} oferta(s)")
+        except Exception as exc:
+            logger.error(f"  → Mercado Livre falhou: {exc}")
+
+    if "zoom" in sources:
+        try:
+            zoom_offers = zoom_search(query, max_results=max_results, min_price=min_price, max_price=max_price)
+            offers.extend(zoom_offers)
+            logger.info(f"  → Zoom: {len(zoom_offers)} oferta(s)")
+        except Exception as exc:
+            logger.error(f"  → Zoom falhou: {exc}")
+
+    ok = skip = errors = 0
+    new_lows: list[dict] = []
+
+    for offer in offers:
+        store = offer.get("store", "?")
+        price = offer.get("price")
+        url   = offer.get("url", "")
+
+        if price is None:
+            errors += 1
+            continue
+
+        if is_duplicate_shopping(sheet, today, name, store):
+            skip += 1
+            continue
+
+        previous_min = get_min_price(sheet, name)
+        new_min      = min(previous_min, price) if previous_min is not None else price
+        is_new_low   = (previous_min is None) or (price <= previous_min)
+
+        success = append_row(
+            sheet=sheet,
+            data={
+                "data": today,
+                "produto": name,
+                "loja": store,
+                "preco": price,
+                "url": url,
+            },
+            min_price=new_min,
+        )
+
+        if success:
+            ok += 1
+            if is_new_low:
+                new_lows.append({"name": name, "store": store, "price": price, "url": url})
+                if telegram_enabled and alert_on_new_low:
+                    notify_new_low(
+                        bot_token=telegram_token,
+                        chat_id=telegram_chat,
+                        product_name=name,
+                        store=store,
+                        price=price,
+                        previous_min=previous_min,
+                        url=url,
+                    )
+        else:
+            errors += 1
+
+    return {"ok": ok, "skip": skip, "error": errors, "new_lows": new_lows}
 
 
 def _auto_name(url: str, idx: int) -> str:
@@ -201,6 +316,10 @@ def run(on_progress: Optional[Callable[[int, int, str], None]] = None) -> None:
     sheets_cfg = config["google_sheets"]
     telegram_cfg = config.get("telegram", {})
 
+    # Registra lojas customizadas salvas no config.json no detector de lojas
+    from price_tracker.core import store_detector as _sd
+    _sd.register_custom_stores(config.get("store_map", {}))
+
     telegram_enabled = telegram_cfg.get("enabled", False)
     telegram_token = telegram_cfg.get("bot_token", "")
     telegram_chat = telegram_cfg.get("chat_id", "")
@@ -230,6 +349,7 @@ def run(on_progress: Optional[Callable[[int, int, str], None]] = None) -> None:
         store    = product.get("store", "").strip() or _auto_store(url)
         selectors     = product.get("price_selectors", [])
         use_playwright = product.get("use_playwright", False)
+        search_mode = product.get("search_mode", "url")
 
         if on_progress is not None:
             try:
@@ -237,7 +357,7 @@ def run(on_progress: Optional[Callable[[int, int, str], None]] = None) -> None:
             except Exception:
                 pass
 
-        logger.info(f"[{idx}/{len(products)}] Verificando: {name} ({store})")
+        logger.info(f"[{idx}/{len(products)}] Verificando: {name} (modo={search_mode})")
 
         # Validação do produto
         error_msg = validate_product(product)
@@ -246,6 +366,19 @@ def run(on_progress: Optional[Callable[[int, int, str], None]] = None) -> None:
             error_count += 1
             continue
 
+        # ── Modo Shopping: busca por palavras-chave em múltiplas lojas ────
+        if search_mode == "shopping":
+            results = _run_shopping_product(
+                product, sheet, today,
+                telegram_enabled, telegram_token, telegram_chat, alert_on_new_low,
+            )
+            ok_count    += results["ok"]
+            skip_count  += results["skip"]
+            error_count += results["error"]
+            new_lows.extend(results["new_lows"])
+            continue
+
+        # ── Modo URL (comportamento original) ─────────────────────────────
         # Verifica duplicata
         if is_duplicate(sheet, today, name):
             logger.info(f"  → Já registrado hoje. Pulando.")

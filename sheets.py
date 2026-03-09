@@ -1,11 +1,11 @@
-"""
+﻿"""
 sheets.py
 ---------
-Módulo responsável por toda a integração com o Google Sheets:
-- Autenticação via Service Account
-- Verificação de registros duplicados
-- Inserção de novos registros
-- Consulta ao histórico de preços
+MÃ³dulo responsÃ¡vel por toda a integraÃ§Ã£o com o Google Sheets:
+- AutenticaÃ§Ã£o via Service Account
+- VerificaÃ§Ã£o de registros duplicados
+- InserÃ§Ã£o de novos registros
+- Consulta ao histÃ³rico de preÃ§os
 """
 
 import logging
@@ -16,22 +16,22 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 logger = logging.getLogger(__name__)
 
-# Escopos necessários para ler e escrever no Google Sheets e Drive
+# Escopos necessÃ¡rios para ler e escrever no Google Sheets e Drive
 SCOPES = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
 ]
 
-# Cabeçalho padrão da planilha (ordem das colunas)
+# CabeÃ§alho padrÃ£o da planilha (ordem das colunas)
 SHEET_HEADERS = [
     "data",
     "produto",
     "loja",
-    "preco",               # preço promocional
-    "preco_sem_promocao",  # preço sem desconto / de lista
-    "preco_cartao",        # total da compra no cartão
+    "preco",               # preÃ§o promocional
+    "preco_sem_promocao",  # preÃ§o sem desconto / de lista
+    "preco_cartao",        # total da compra no cartÃ£o
     "preco_parcelado",     # valor de cada parcela
-    "parcelas",            # número de parcelas
+    "parcelas",            # nÃºmero de parcelas
     "url",
     "preco_minimo_historico",
 ]
@@ -45,7 +45,7 @@ def connect_to_sheets(
     Autentica usando uma Service Account e retorna a primeira aba (worksheet)
     da planilha especificada.
 
-    Parâmetros
+    ParÃ¢metros
     ----------
     credentials_file  : Caminho para o arquivo credentials.json baixado do
                         Google Cloud Console.
@@ -53,8 +53,8 @@ def connect_to_sheets(
 
     Raises
     ------
-    FileNotFoundError        : Se credentials_file não existir.
-    gspread.SpreadsheetNotFound : Se a planilha não for encontrada ou não tiver
+    FileNotFoundError        : Se credentials_file nÃ£o existir.
+    gspread.SpreadsheetNotFound : Se a planilha nÃ£o for encontrada ou nÃ£o tiver
                                   sido compartilhada com a service account.
     """
     try:
@@ -65,32 +65,32 @@ def connect_to_sheets(
         spreadsheet = client.open(spreadsheet_name)
         sheet = spreadsheet.sheet1
 
-        # Garante que o cabeçalho existe na primeira linha
+        # Garante que o cabeÃ§alho existe na primeira linha
         first_row = sheet.row_values(1)
         if first_row != SHEET_HEADERS:
             if not first_row:
-                # Planilha vazia: insere cabeçalho
+                # Planilha vazia: insere cabeÃ§alho
                 sheet.insert_row(SHEET_HEADERS, index=1)
-                logger.info("Cabeçalho criado na planilha.")
+                logger.info("CabeÃ§alho criado na planilha.")
             else:
-                # Cabeçalho divergente: avisa mas continua
+                # CabeÃ§alho divergente: avisa mas continua
                 logger.warning(
-                    f"Cabeçalho da planilha diverge do esperado. "
+                    f"CabeÃ§alho da planilha diverge do esperado. "
                     f"Encontrado: {first_row} | Esperado: {SHEET_HEADERS}"
                 )
 
-        logger.info(f"Conectado à planilha '{spreadsheet_name}' com sucesso.")
+        logger.info(f"Conectado Ã  planilha '{spreadsheet_name}' com sucesso.")
         return sheet
 
     except FileNotFoundError:
         logger.error(
-            f"Arquivo de credenciais '{credentials_file}' não encontrado. "
+            f"Arquivo de credenciais '{credentials_file}' nÃ£o encontrado. "
             "Verifique o caminho em config.json."
         )
         raise
     except gspread.exceptions.SpreadsheetNotFound:
         logger.error(
-            f"Planilha '{spreadsheet_name}' não encontrada. "
+            f"Planilha '{spreadsheet_name}' nÃ£o encontrada. "
             "Certifique-se de que ela existe e foi compartilhada com o e-mail "
             "da service account (client_email no credentials.json)."
         )
@@ -100,15 +100,39 @@ def connect_to_sheets(
         raise
 
 
+def _get_records(sheet: gspread.Worksheet) -> list[dict]:
+    """
+    Alternativa robusta a get_all_records() que nÃ£o falha quando hÃ¡
+    colunas com nomes duplicados na planilha.
+    Usa get_all_values() e faz o zip manualmente usando a primeira linha
+    como cabeÃ§alho.
+    """
+    rows = sheet.get_all_values()
+    if not rows:
+        return []
+    headers = rows[0]
+    # Para colunas repetidas, sufixar com _2, _3, etc para nÃ£o perder dados
+    seen: dict[str, int] = {}
+    safe_headers = []
+    for h in headers:
+        if h in seen:
+            seen[h] += 1
+            safe_headers.append(f"{h}_{seen[h]}")
+        else:
+            seen[h] = 1
+            safe_headers.append(h)
+    return [dict(zip(safe_headers, row)) for row in rows[1:]]
+
+
 def is_duplicate(sheet: gspread.Worksheet, today: str, product_name: str) -> bool:
     """
-    Verifica se já existe um registro para `product_name` na data `today`.
+    Verifica se jÃ¡ existe um registro para `product_name` na data `today`.
 
-    Retorna True se duplicado, False caso contrário.
-    Em caso de erro, retorna False para não bloquear a execução.
+    Retorna True se duplicado, False caso contrÃ¡rio.
+    Em caso de erro, retorna False para nÃ£o bloquear a execuÃ§Ã£o.
     """
     try:
-        records = sheet.get_all_records()
+        records = _get_records(sheet)
         for record in records:
             if (
                 str(record.get("data", "")).strip() == today
@@ -121,13 +145,40 @@ def is_duplicate(sheet: gspread.Worksheet, today: str, product_name: str) -> boo
         return False
 
 
-def get_min_price(sheet: gspread.Worksheet, product_name: str) -> Optional[float]:
+def is_duplicate_shopping(
+    sheet: gspread.Worksheet,
+    today: str,
+    product_name: str,
+    store: str,
+) -> bool:
     """
-    Retorna o menor preço já registrado para `product_name` na planilha.
-    Retorna None se não houver histórico.
+    VersÃ£o para modo shopping: verifica se jÃ¡ existe registro para
+    (data, produto, loja). Permite mÃºltiplas lojas por produto por dia.
+
+    Retorna True se duplicado, False caso contrÃ¡rio.
     """
     try:
-        records = sheet.get_all_records()
+        records = _get_records(sheet)
+        for record in records:
+            if (
+                str(record.get("data", "")).strip() == today
+                and str(record.get("produto", "")).strip() == product_name
+                and str(record.get("loja", "")).strip() == store
+            ):
+                return True
+        return False
+    except Exception as exc:
+        logger.error(f"Erro ao verificar duplicatas (shopping): {exc}")
+        return False
+
+
+def get_min_price(sheet: gspread.Worksheet, product_name: str) -> Optional[float]:
+    """
+    Retorna o menor preÃ§o jÃ¡ registrado para `product_name` na planilha.
+    Retorna None se nÃ£o houver histÃ³rico.
+    """
+    try:
+        records = _get_records(sheet)
         prices = []
         for record in records:
             if str(record.get("produto", "")).strip() == product_name:
@@ -138,7 +189,7 @@ def get_min_price(sheet: gspread.Worksheet, product_name: str) -> Optional[float
                     pass
         return min(prices) if prices else None
     except Exception as exc:
-        logger.error(f"Erro ao calcular preço mínimo histórico: {exc}")
+        logger.error(f"Erro ao calcular preÃ§o mÃ­nimo histÃ³rico: {exc}")
         return None
 
 
@@ -150,11 +201,11 @@ def append_row(
     """
     Adiciona uma nova linha na planilha com os dados do produto.
 
-    Parâmetros
+    ParÃ¢metros
     ----------
     sheet     : Worksheet do gspread
     data      : Dict com chaves: data, produto, loja, preco, url
-    min_price : Menor preço histórico (pode ser igual ao preço atual
+    min_price : Menor preÃ§o histÃ³rico (pode ser igual ao preÃ§o atual
                 se for o primeiro registro)
 
     Retorna True se bem-sucedido, False em caso de erro.
@@ -173,7 +224,7 @@ def append_row(
             data["data"],
             data["produto"],
             data["loja"],
-            # Formata o preço como número com 2 casas decimais
+            # Formata o preÃ§o como nÃºmero com 2 casas decimais
             round(float(data["preco"]), 2),
             _fmt(data.get("preco_sem_promocao")),
             _fmt(data.get("preco_cartao")),
@@ -182,7 +233,7 @@ def append_row(
             data["url"],
             round(float(min_price), 2) if min_price is not None else round(float(data["preco"]), 2),
         ]
-        # USER_ENTERED permite que o Sheets interprete números como tal
+        # USER_ENTERED permite que o Sheets interprete nÃºmeros como tal
         sheet.append_row(row, value_input_option="USER_ENTERED")
 
         preco_fmt = f"R$ {data['preco']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -196,11 +247,11 @@ def append_row(
 
 def get_price_history(sheet: gspread.Worksheet, product_name: str) -> list:
     """
-    Retorna uma lista de dicts com todo o histórico de preços de um produto.
-    Cada item contém: data, preco.
+    Retorna uma lista de dicts com todo o histÃ³rico de preÃ§os de um produto.
+    Cada item contÃ©m: data, preco.
     """
     try:
-        records = sheet.get_all_records()
+        records = _get_records(sheet)
         history = [
             {"data": r["data"], "preco": float(r["preco"])}
             for r in records
@@ -209,5 +260,5 @@ def get_price_history(sheet: gspread.Worksheet, product_name: str) -> list:
         ]
         return sorted(history, key=lambda x: x["data"])
     except Exception as exc:
-        logger.error(f"Erro ao buscar histórico de '{product_name}': {exc}")
+        logger.error(f"Erro ao buscar histÃ³rico de '{product_name}': {exc}")
         return []

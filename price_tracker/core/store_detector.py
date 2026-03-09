@@ -50,6 +50,14 @@ def detect_store(url: str) -> Optional[str]:
     return None
 
 
+def register_custom_stores(stores: dict) -> None:
+    """
+    Mescla lojas customizadas (vindas do config.json) no STORE_MAP em tempo
+    de execução. Pode ser chamado múltiplas vezes sem problemas.
+    """
+    STORE_MAP.update(stores)
+
+
 def _extract_domain(url: str) -> str:
     """
     Extrai o componente do domínio da URL.

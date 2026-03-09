@@ -126,35 +126,25 @@ def save_config(config: dict) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# I/O — STORE_MAP (store_detector.py)
+# I/O — STORE_MAP (armazenado em config.json["store_map"])
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Lojas builtin hardcoded — importadas diretamente do módulo compilado
+from price_tracker.core.store_detector import STORE_MAP as _BUILTIN_STORE_MAP
+
+
 def load_store_map() -> dict:
-    if not STORE_DETECTOR_PATH.exists():
-        return {}
-    text = STORE_DETECTOR_PATH.read_text(encoding="utf-8")
-    m = re.search(r'STORE_MAP\s*:\s*dict\[.*?\]\s*=\s*(\{[^}]+\})', text, re.DOTALL)
-    if not m:
-        return {}
-    try:
-        return ast.literal_eval(m.group(1))
-    except Exception:
-        return {}
+    """Retorna builtin stores + custom stores do config.json."""
+    result = dict(_BUILTIN_STORE_MAP)
+    cfg = load_config()
+    result.update(cfg.get("store_map", {}))
+    return result
 
 
-def save_store_map(store_map: dict) -> None:
-    text = STORE_DETECTOR_PATH.read_text(encoding="utf-8")
-    lines = []
-    for k, v in store_map.items():
-        pad = " " * max(1, 16 - len(k))
-        lines.append(f'    "{k}":{pad}"{v}",')
-    new_block = "{\n" + "\n".join(lines) + "\n}"
-    new_text = re.sub(
-        r'(STORE_MAP\s*:\s*dict\[.*?\]\s*=\s*)\{[^}]+\}',
-        lambda m: m.group(1) + new_block,
-        text, flags=re.DOTALL,
-    )
-    STORE_DETECTOR_PATH.write_text(new_text, encoding="utf-8")
+def save_store_map(store_map: dict, config: dict) -> None:
+    """Salva apenas lojas não-builtin em config.json[\"store_map\"]."""
+    custom = {k: v for k, v in store_map.items() if k not in _BUILTIN_STORE_MAP}
+    config["store_map"] = custom
 
 
 def create_scraper_template(store_id: str) -> Path:
@@ -318,52 +308,144 @@ class ProductDialog(_BaseDialog):
     def __init__(self, parent, product: Optional[dict] = None):
         super().__init__(parent)
         self.title("Novo Produto" if product is None else "Editar Produto")
-        self.resizable(False, False)
+        self.resizable(False, True)
         self.grab_set()
         self.result: Optional[dict] = None
 
         pad = {"padx": 8, "pady": 5}
-        fields_frame = ttk.LabelFrame(self, text="Dados do Produto", padding=10)
-        fields_frame.pack(fill="x", padx=12, pady=(12, 4))
+
+        # ── Seletor de modo ───────────────────────────────────────────────
+        mode_frame = ttk.LabelFrame(self, text="Modo de busca", padding=8)
+        mode_frame.pack(fill="x", padx=12, pady=(12, 4))
+        initial_mode = (product.get("search_mode", "url") if product else "url")
+        self._mode_var = tk.StringVar(value=initial_mode)
+        ttk.Radiobutton(
+            mode_frame, text="URL direta  (comportamento atual)",
+            variable=self._mode_var, value="url",
+            command=self._on_mode_change,
+        ).pack(side="left", padx=(4, 16))
+        ttk.Radiobutton(
+            mode_frame, text="Busca no Shopping  (multi-loja, por palavras-chave)",
+            variable=self._mode_var, value="shopping",
+            command=self._on_mode_change,
+        ).pack(side="left", padx=4)
+
+        # ── Frame: modo URL ───────────────────────────────────────────────
+        self._url_frame = ttk.LabelFrame(self, text="URL e Seletores", padding=10)
 
         for row, label in enumerate(["Nome do produto (opcional):", "Loja (opcional):", "URL da pagina:"]):
-            ttk.Label(fields_frame, text=label).grid(row=row, column=0, sticky="w", **pad)
-            e = ttk.Entry(fields_frame, width=55)
+            ttk.Label(self._url_frame, text=label).grid(row=row, column=0, sticky="w", **pad)
+            e = ttk.Entry(self._url_frame, width=55)
             e.grid(row=row, column=1, sticky="ew", **pad)
             setattr(self, ["_name_e", "_store_e", "_url_e"][row], e)
-        fields_frame.columnconfigure(1, weight=1)
+        self._url_frame.columnconfigure(1, weight=1)
 
         self._url_e.bind("<FocusOut>", self._auto_fill_store)
         ttk.Label(
-            fields_frame, text="Nome e Loja sao opcionais — preenchidos automaticamente pela URL.",
+            self._url_frame,
+            text="Nome e Loja sao opcionais — preenchidos automaticamente pela URL.",
             font=("Segoe UI", 8),
         ).grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 2))
 
-        sel_frame = ttk.LabelFrame(self, text="Seletores CSS — opcionais (um por linha)", padding=10)
-        sel_frame.pack(fill="both", expand=True, padx=12, pady=4)
+        sel_inner = ttk.LabelFrame(self._url_frame, text="Seletores CSS (opcionais, um por linha)", padding=8)
+        sel_inner.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=4, pady=(4, 0))
+        self._url_frame.rowconfigure(4, weight=1)
         ttk.Label(
-            sel_frame,
+            sel_inner,
             text="Camadas: 1. JSON-LD   2. Scraper dedicado   3. Seletores CSS   4. Heuristica",
             justify="left",
-        ).pack(anchor="w", padx=4, pady=(0, 6))
-        self._sel_text = tk.Text(sel_frame, width=60, height=7, font=FONT_MONO,
+        ).pack(anchor="w", padx=2, pady=(0, 4))
+        self._sel_text = tk.Text(sel_inner, width=60, height=6, font=FONT_MONO,
                                  bg=BG_INPUT, fg=FG, insertbackground=FG)
-        sb = ttk.Scrollbar(sel_frame, command=self._sel_text.yview)
+        sb = ttk.Scrollbar(sel_inner, command=self._sel_text.yview)
         self._sel_text.configure(yscrollcommand=sb.set)
         self._sel_text.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
 
-        if product:
-            self._name_e.insert(0, product.get("name", ""))
-            self._store_e.insert(0, product.get("store", ""))
-            self._url_e.insert(0, product.get("url", ""))
-            self._sel_text.insert("1.0", "\n".join(product.get("price_selectors", [])))
+        # ── Frame: modo Shopping ──────────────────────────────────────────
+        self._shop_frame = ttk.LabelFrame(self, text="Busca no Shopping", padding=10)
 
+        ttk.Label(self._shop_frame, text="Nome do produto:").grid(row=0, column=0, sticky="w", **pad)
+        self._shop_name_e = ttk.Entry(self._shop_frame, width=55)
+        self._shop_name_e.grid(row=0, column=1, sticky="ew", **pad)
+
+        ttk.Label(self._shop_frame, text="Palavras-chave\n(uma por linha):").grid(row=1, column=0, sticky="nw", **pad)
+        kw_wrap = tk.Frame(self._shop_frame, bg=BG_INPUT)
+        kw_wrap.grid(row=1, column=1, sticky="nsew", **pad)
+        self._kw_text = tk.Text(kw_wrap, width=52, height=4, font=FONT_MONO,
+                                bg=BG_INPUT, fg=FG, insertbackground=FG)
+        kw_sb = ttk.Scrollbar(kw_wrap, command=self._kw_text.yview)
+        self._kw_text.configure(yscrollcommand=kw_sb.set)
+        self._kw_text.pack(side="left", fill="both", expand=True)
+        kw_sb.pack(side="right", fill="y")
+        ttk.Label(self._shop_frame, text="Ex: rtx 4070 super, placa de video nvidia",
+                  font=("Segoe UI", 8)).grid(row=2, column=1, sticky="w", padx=8, pady=(0, 4))
+
+        nums_frame = ttk.Frame(self._shop_frame)
+        nums_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=4, pady=4)
+
+        ttk.Label(nums_frame, text="Max. resultados:").grid(row=0, column=0, sticky="w", padx=(4, 4), pady=3)
+        self._max_results_e = ttk.Entry(nums_frame, width=8)
+        self._max_results_e.insert(0, "10")
+        self._max_results_e.grid(row=0, column=1, sticky="w", pady=3)
+
+        ttk.Label(nums_frame, text="Preco minimo (R$):").grid(row=0, column=2, sticky="w", padx=(16, 4), pady=3)
+        self._min_price_e = ttk.Entry(nums_frame, width=12)
+        self._min_price_e.grid(row=0, column=3, sticky="w", pady=3)
+
+        ttk.Label(nums_frame, text="Preco maximo (R$):").grid(row=0, column=4, sticky="w", padx=(16, 4), pady=3)
+        self._max_price_e = ttk.Entry(nums_frame, width=12)
+        self._max_price_e.grid(row=0, column=5, sticky="w", pady=3)
+
+        src_frame = ttk.LabelFrame(self._shop_frame, text="Fontes de busca", padding=6)
+        src_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=4, pady=(4, 0))
+        self._src_ml_var   = tk.BooleanVar(value=True)
+        self._src_zoom_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(src_frame, text="Mercado Livre  (API gratuita)", variable=self._src_ml_var).pack(side="left", padx=8)
+        ttk.Checkbutton(src_frame, text="Zoom.com.br  (agregador BR)",   variable=self._src_zoom_var).pack(side="left", padx=8)
+
+        self._shop_frame.columnconfigure(1, weight=1)
+
+        # ── Preenche campos ao editar produto existente ───────────────────
+        if product:
+            if initial_mode == "shopping":
+                self._shop_name_e.insert(0, product.get("name", ""))
+                self._kw_text.insert("1.0", "\n".join(product.get("keywords", [])))
+                self._max_results_e.delete(0, "end")
+                self._max_results_e.insert(0, str(product.get("max_results", 10)))
+                mi = product.get("min_price")
+                mx = product.get("max_price")
+                if mi is not None:
+                    self._min_price_e.insert(0, str(mi))
+                if mx is not None:
+                    self._max_price_e.insert(0, str(mx))
+                sources = product.get("sources", ["mercadolivre", "zoom"])
+                self._src_ml_var.set("mercadolivre" in sources)
+                self._src_zoom_var.set("zoom" in sources)
+            else:
+                self._name_e.insert(0, product.get("name", ""))
+                self._store_e.insert(0, product.get("store", ""))
+                self._url_e.insert(0, product.get("url", ""))
+                self._sel_text.insert("1.0", "\n".join(product.get("price_selectors", [])))
+
+        # ── Botoes ────────────────────────────────────────────────────────
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill="x", padx=12, pady=(4, 12))
         ttk.Button(btn_frame, text="Cancelar", command=self.destroy).pack(side="right", padx=(4, 0))
         ttk.Button(btn_frame, text="Salvar",   command=self._save).pack(side="right")
+
+        # Exibe o frame correspondente ao modo inicial
+        self._on_mode_change()
         self._center(parent)
+
+    def _on_mode_change(self) -> None:
+        mode = self._mode_var.get()
+        if mode == "shopping":
+            self._url_frame.pack_forget()
+            self._shop_frame.pack(fill="both", expand=True, padx=12, pady=4)
+        else:
+            self._shop_frame.pack_forget()
+            self._url_frame.pack(fill="both", expand=True, padx=12, pady=4)
 
     def _auto_fill_store(self, _event=None) -> None:
         if self._store_e.get().strip():
@@ -375,6 +457,52 @@ class ProductDialog(_BaseDialog):
                 self._store_e.insert(0, store)
 
     def _save(self) -> None:
+        mode = self._mode_var.get()
+
+        if mode == "shopping":
+            name = self._shop_name_e.get().strip()
+            if not name:
+                messagebox.showwarning("Campo obrigatorio", "Informe o nome do produto.", parent=self)
+                return
+            keywords = [k.strip() for k in self._kw_text.get("1.0", "end").strip().splitlines() if k.strip()]
+            try:
+                max_results = int(self._max_results_e.get().strip() or "10")
+            except ValueError:
+                messagebox.showwarning("Valor invalido", "Max. resultados deve ser um numero inteiro.", parent=self)
+                return
+            def _parse_price(s):
+                s = s.strip().replace(",", ".")
+                return float(s) if s else None
+            try:
+                min_p = _parse_price(self._min_price_e.get())
+                max_p = _parse_price(self._max_price_e.get())
+            except ValueError:
+                messagebox.showwarning("Valor invalido", "Preco minimo/maximo invalido.", parent=self)
+                return
+            sources = []
+            if self._src_ml_var.get():
+                sources.append("mercadolivre")
+            if self._src_zoom_var.get():
+                sources.append("zoom")
+            if not sources:
+                messagebox.showwarning("Fontes vazias", "Selecione ao menos uma fonte de busca.", parent=self)
+                return
+            result: dict = {
+                "search_mode": "shopping",
+                "name": name,
+                "keywords": keywords,
+                "max_results": max_results,
+                "sources": sources,
+            }
+            if min_p is not None:
+                result["min_price"] = min_p
+            if max_p is not None:
+                result["max_price"] = max_p
+            self.result = result
+            self.destroy()
+            return
+
+        # Modo URL
         url   = self._url_e.get().strip()
         name  = self._name_e.get().strip()
         store = self._store_e.get().strip()
@@ -382,7 +510,7 @@ class ProductDialog(_BaseDialog):
         if not url:
             messagebox.showwarning("Campo obrigatorio", "Informe a URL do produto.", parent=self)
             return
-        result: dict = {"url": url, "name": name or _gui_auto_name(url), "store": store or _gui_auto_store(url)}
+        result = {"url": url, "name": name or _gui_auto_name(url), "store": store or _gui_auto_store(url)}
         if sels:
             result["price_selectors"] = sels
         self.result = result
@@ -891,15 +1019,13 @@ class StoresTab(ttk.Frame):
                 except Exception as exc:
                     messagebox.showwarning("Erro", str(exc), parent=self.winfo_toplevel())
 
-    def load(self) -> None:
-        self._store_map = load_store_map()
+    def load(self, config: dict) -> None:
+        self._store_map = dict(_BUILTIN_STORE_MAP)
+        self._store_map.update(config.get("store_map", {}))
         self._refresh_tree()
 
-    def flush(self) -> None:
-        if not STORE_DETECTOR_PATH.exists():
-            messagebox.showwarning("Arquivo nao encontrado", f"{STORE_DETECTOR_PATH} nao existe.")
-            return
-        save_store_map(self._store_map)
+    def flush(self, config: dict) -> None:
+        save_store_map(self._store_map, config)
 
 
 # =============================================================================
@@ -1059,7 +1185,7 @@ class App(tk.Tk):
     def _load_config_tabs(self) -> None:
         self._general_tab.load(self._config)
         self._products_tab.load(self._config)
-        self._stores_tab.load()
+        self._stores_tab.load(self._config)
 
     def _save_config(self) -> None:
         self._general_tab.flush(self._config)
@@ -1073,8 +1199,8 @@ class App(tk.Tk):
             messagebox.showwarning("Campo obrigatorio", "Informe o nome da planilha.")
             return
 
+        self._stores_tab.flush(self._config)
         save_config(self._config)
-        self._stores_tab.flush()
         self.set_status("Configuracoes salvas.", SUCCESS)
         self._monitor_tab.refresh_info()
         messagebox.showinfo("Salvo!", f"config.json atualizado.\n\n{CONFIG_PATH}")
