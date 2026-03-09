@@ -157,9 +157,17 @@ def _auto_store(url: str) -> str:
     try:
         from urllib.parse import urlparse
         host = urlparse(url).netloc.lstrip("www.")
-        # Pega o nome antes do primeiro ponto e capitaliza
-        name = host.split(".")[0]
-        return name.title()
+        parts = [p for p in host.split(".") if p]
+
+        # Regra simples para domínios BR: x.com.br → usa "x"
+        if len(parts) >= 3 and parts[-1] == "br" and parts[-2] in {"com", "net", "org", "gov"}:
+            return parts[-3].title()
+
+        # Caso geral: usa o rótulo imediatamente antes do TLD
+        if len(parts) >= 2:
+            return parts[-2].title()
+
+        return parts[0].title() if parts else "?"
     except Exception:
         return "?"
 
@@ -268,7 +276,7 @@ def run() -> None:
                 "loja": store,
                 "preco": price,
                 "preco_sem_promocao": extraction.get("preco_sem_promocao"),
-                "preco_pix": extraction.get("preco_pix"),
+                "preco_cartao": extraction.get("preco_cartao"),
                 "preco_parcelado": extraction.get("preco_parcelado"),
                 "parcelas": extraction.get("parcelas"),
                 "url": url,

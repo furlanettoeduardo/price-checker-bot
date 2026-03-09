@@ -46,7 +46,6 @@
     {
       "url": "https://loja.cockpitextremeracing.com.br/products/cockpit-speedtrack-st?variant=51124156596505",
       "name": "Cockpit Speedtrack St",
-      "store": "Loja",
       "use_playwright": true,
       "price_selectors": [
         "#product-info > div.col-span-full.w-full.md\\:col-start-8.md\\:col-end-12 > div > div.mt-6.flex.flex-col.space-y-1.md\\:mt-8 > div.flex.items-center.gap-4.w-full > h3"

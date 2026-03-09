@@ -29,7 +29,7 @@ SHEET_HEADERS = [
     "loja",
     "preco",               # preço promocional
     "preco_sem_promocao",  # preço sem desconto / de lista
-    "preco_pix",           # preço à vista / Pix
+    "preco_cartao",        # total da compra no cartão
     "preco_parcelado",     # valor de cada parcela
     "parcelas",            # número de parcelas
     "url",
@@ -176,7 +176,7 @@ def append_row(
             # Formata o preço como número com 2 casas decimais
             round(float(data["preco"]), 2),
             _fmt(data.get("preco_sem_promocao")),
-            _fmt(data.get("preco_pix")),
+            _fmt(data.get("preco_cartao")),
             _fmt(data.get("preco_parcelado")),
             data.get("parcelas") or "",
             data["url"],

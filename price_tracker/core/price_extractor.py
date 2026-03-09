@@ -138,6 +138,7 @@ def get_product_price(
         "preco_parcelado": None,
         "parcelas": None,
         "preco_pix": None,
+        "preco_cartao": None,
         "currency": "BRL",
         "confidence": 0.0,
         "method": "failed",
@@ -196,7 +197,13 @@ def _fill_supplementary(
       2. Fallback genérico: regex no texto completo da página
     Campos já preenchidos não são sobrescritos.
     """
-    SUPP_FIELDS = ("preco_sem_promocao", "preco_pix", "preco_parcelado", "parcelas")
+    SUPP_FIELDS = (
+        "preco_sem_promocao",
+        "preco_pix",
+        "preco_cartao",
+        "preco_parcelado",
+        "parcelas",
+    )
 
     if all(result.get(f) is not None for f in SUPP_FIELDS):
         return result  # tudo já preenchido
@@ -237,6 +244,15 @@ def _fill_supplementary(
         )
         result["preco_pix"] = None
 
+    # preco_cartao deve ser MAIOR ou IGUAL ao preço atual
+    preco_cartao = result.get("preco_cartao")
+    if preco_cartao is not None and price is not None and preco_cartao < price:
+        logger.debug(
+            f"[Supplementary] preco_cartao R$ {preco_cartao:.2f} descartado "
+            f"(menor que price R$ {price:.2f})"
+        )
+        result["preco_cartao"] = None
+
     if all(result.get(f) is not None for f in SUPP_FIELDS):
         return result
 
@@ -245,4 +261,11 @@ def _fill_supplementary(
     for field, value in supplementary.items():
         if result.get(field) is None and value is not None:
             result[field] = value
+
+    # Se ainda não há preco_cartao, calcula pelo parcelamento
+    if result.get("preco_cartao") is None:
+        parcelas = result.get("parcelas")
+        preco_parc = result.get("preco_parcelado")
+        if parcelas and preco_parc:
+            result["preco_cartao"] = round(float(parcelas) * float(preco_parc), 2)
     return result

@@ -173,12 +173,12 @@ def _extract_from_next_data(soup: BeautifulSoup) -> dict:
 
     Estrutura real de `pageProps.product.prices` na Kabum:
       - oldPrice          : preço original sem desconto (= preco_sem_promocao)
-      - priceWithDiscount : preço promocional que o cliente paga (= price)
-      - price             : total do parcelamento (preço * fator do cartão)
-      - discountPercentage: percentual de desconto extra no Pix
+      - priceWithDiscount : preço pix/à vista — JÁ é o preço final descontado
+      - price             : total do parcelamento (preço no cartão)
+      - discountPercentage: % de desconto JÁ aplicado sobre 'price' para
+                            chegar em 'priceWithDiscount' (não é desconto extra)
 
-    O preço Pix não aparece como número concreto na página —
-    é calculado como: priceWithDiscount × (1 − discountPercentage / 100).
+    preco_pix = priceWithDiscount  (usar diretamente — não recalcular).
     """
     extra: dict = {}
     script = soup.find("script", {"id": "__NEXT_DATA__"})
@@ -196,7 +196,8 @@ def _extract_from_next_data(soup: BeautifulSoup) -> dict:
 
         old_price   = prices.get("oldPrice")           # preço riscado
         promo_price = prices.get("priceWithDiscount")  # preço atual com desconto
-        pix_pct     = prices.get("discountPercentage", 0)  # % extra no Pix
+        card_total  = prices.get("price")              # total no cartão
+        pix_pct     = prices.get("discountPercentage", 0)  # % já aplicado
 
         # ── Preço sem promoção (riscado) ─────────────────────────────────
         if old_price and promo_price and float(old_price) > float(promo_price):
@@ -204,14 +205,24 @@ def _extract_from_next_data(soup: BeautifulSoup) -> dict:
             extra["preco_sem_promocao"] = old
             logger.info(f"[Kabum/__NEXT_DATA__] Preço sem promoção: R$ {old:.2f}")
 
-        # ── Preço Pix (calculado a partir da porcentagem de desconto) ─────
-        if promo_price and pix_pct and float(pix_pct) > 0:
-            pix = round(float(promo_price) * (1 - float(pix_pct) / 100), 2)
+        # ── Preço Pix ─────────────────────────────────────────────────────
+        # priceWithDiscount JÁ É o preço pix/à vista.
+        # o discountPercentage descreve o desconto já aplicado para chegar
+        # nesse valor a partir do preço no cartão (prices.price), não é
+        # um desconto adicional a ser calculado.
+        if promo_price:
+            pix = round(float(promo_price), 2)
             extra["preco_pix"] = pix
             logger.info(
                 f"[Kabum/__NEXT_DATA__] Preço Pix: R$ {pix:.2f} "
-                f"({pix_pct}% de desconto sobre R$ {promo_price:.2f})"
+                f"(priceWithDiscount direto — {pix_pct}% já aplicado)"
             )
+
+        # ── Preço total no cartão ───────────────────────────────────────
+        if card_total:
+            total = round(float(card_total), 2)
+            extra["preco_cartao"] = total
+            logger.info(f"[Kabum/__NEXT_DATA__] Preço Cartão (total): R$ {total:.2f}")
 
     except Exception as exc:
         logger.debug(f"[Kabum] Erro ao parsear __NEXT_DATA__: {exc}")

@@ -92,46 +92,49 @@ def extract_supplementary(soup: BeautifulSoup) -> dict:
         except Exception:
             pass
 
-    # ── Preço principal para base do cálculo Pix ─────────────────────────
+    # ── Preço principal para base do Pix (NÃO usar preço riscado) ─────────
     base_price = None
-    for selector in _SELECTORS:
+
+    # Prioriza JSON-LD (geralmente já é o preço à vista correto)
+    for script in soup.find_all("script", type="application/ld+json"):
         try:
-            el = soup.select_one(selector)
-            if el is None:
-                continue
-            p = normalize_price(el.get("content") or el.get_text(separator=" ", strip=True))
-            if p:
-                base_price = p
+            import json as _json
+            data = _json.loads(script.string or "")
+            raw = data.get("offers", {}).get("price")
+            if raw:
+                base_price = normalize_price(str(raw))
                 break
         except Exception:
             pass
 
-    # Fallback: JSON-LD
+    # Fallback: seletores de preço, evitando elementos riscados
     if base_price is None:
-        for script in soup.find_all("script", type="application/ld+json"):
+        for selector in _SELECTORS:
             try:
-                import json as _json
-                data = _json.loads(script.string or "")
-                raw = data.get("offers", {}).get("price")
-                if raw:
-                    base_price = normalize_price(str(raw))
+                el = soup.select_one(selector)
+                if el is None:
+                    continue
+                # Ignora se o elemento está marcado como riscado/old price
+                class_str = " ".join(el.get("class") or []).lower()
+                if "strikethrough" in class_str or "old" in class_str:
+                    continue
+                p = normalize_price(el.get("content") or el.get_text(separator=" ", strip=True))
+                if p:
+                    base_price = p
                     break
             except Exception:
                 pass
 
-    # ── Pix: extrai % de desconto do texto ───────────────────────────────
-    # Padrões: "no PIX com 15% desconto", "PIX 15%", "15% no pix"
-    pix_re = re.compile(
-        r"(?:pix|piix)[^\d]{0,25}(\d{1,2})\s*%|"  # pix ... X%
-        r"(\d{1,2})\s*%[^\d]{0,25}(?:pix|desconto.*pix)",
-        re.IGNORECASE,
-    )
-    m = pix_re.search(full_text)
-    if m and base_price:
-        pct = int(m.group(1) or m.group(2))
-        pix = round(base_price * (1 - pct / 100), 2)
-        extra["preco_pix"] = pix
-        logger.info(f"[Pichau/Supplementary] Pix: R$ {pix:.2f} ({pct}% sobre R$ {base_price:.2f})")
+    # ── Pix ───────────────────────────────────────────────────────────────
+    # Na Pichau o preço exibido na página (base_price) JÁ É o preço pix/à
+    # vista. Evita usar preço riscado como base.
+    if base_price:
+        sem_promo = extra.get("preco_sem_promocao")
+        if sem_promo is None or base_price < sem_promo:
+            extra["preco_pix"] = round(base_price, 2)
+            logger.info(
+                f"[Pichau/Supplementary] Pix: R$ {base_price:.2f} (preço à vista da página)"
+            )
 
     # ── Parcelamento via seletores ────────────────────────────────────────
     for selector in _INSTALLMENT_SELECTORS:
