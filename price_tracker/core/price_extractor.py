@@ -145,6 +145,38 @@ def get_product_price(
         "url": url,
     }
 
+    def _run_pipeline(soup: BeautifulSoup, store_id: Optional[str]) -> Optional[dict]:
+        # ── Camada 1: JSON-LD ─────────────────────────────────────────────
+        result = extract_price_jsonld(soup)
+        if result and result.get("price"):
+            return _fill_supplementary({**base, **result}, soup, store_id)
+
+        # ── Camada 2: Scraper específico de loja ──────────────────────────
+        if store_id:
+            result = extract_price_store(soup, store_id)
+            if result and result.get("price"):
+                result["method"] = "store"
+                return _fill_supplementary({**base, **result}, soup, store_id)
+
+        # ── Camada 2b: Scraper universal ─────────────────────────────────
+        result = _universal_scraper.extract(soup)
+        if result and result.get("price"):
+            result["method"] = "universal"
+            return _fill_supplementary({**base, **result}, soup, store_id)
+
+        # ── Camada 3: Seletores CSS do config.json ────────────────────────
+        if css_selectors:
+            result = _extract_price_css(soup, css_selectors)
+            if result and result.get("price"):
+                return _fill_supplementary({**base, **result}, soup, store_id)
+
+        # ── Camada 4: Heurística (fallback) ───────────────────────────────
+        result = extract_price_heuristic(soup)
+        if result and result.get("price"):
+            return _fill_supplementary({**base, **result}, soup, store_id)
+
+        return None
+
     # ── Download da página (com cache) ────────────────────────────────────
     soup = fetch_page(url, use_playwright=use_playwright)
     if soup is None:
@@ -154,34 +186,18 @@ def get_product_price(
     # Detecta loja uma vez — reutilizada em todas as camadas abaixo
     store_id = detect_store(url)
 
-    # ── Camada 1: JSON-LD ─────────────────────────────────────────────────
-    result = extract_price_jsonld(soup)
-    if result and result.get("price"):
-        return _fill_supplementary({**base, **result}, soup, store_id)
+    result = _run_pipeline(soup, store_id)
+    if result:
+        return result
 
-    # ── Camada 2: Scraper específico de loja ──────────────────────────────
-    if store_id:
-        result = extract_price_store(soup, store_id)
-        if result and result.get("price"):
-            result["method"] = "store"
-            return _fill_supplementary({**base, **result}, soup, store_id)
-
-    # ── Camada 2b: Scraper universal (Shopify, VTEX, WooCommerce, CSS genérico) ─
-    result = _universal_scraper.extract(soup)
-    if result and result.get("price"):
-        result["method"] = "universal"
-        return _fill_supplementary({**base, **result}, soup, store_id)
-
-    # ── Camada 3: Seletores CSS do config.json ────────────────────────────
-    if css_selectors:
-        result = _extract_price_css(soup, css_selectors)
-        if result and result.get("price"):
-            return _fill_supplementary({**base, **result}, soup, store_id)
-
-    # ── Camada 4: Heurística (fallback) ───────────────────────────────────
-    result = extract_price_heuristic(soup)
-    if result and result.get("price"):
-        return _fill_supplementary({**base, **result}, soup, store_id)
+    # Se não houver config específica, tenta novamente com Playwright
+    if not use_playwright:
+        logger.info(f"[Fallback] Tentando Playwright por falta de extração: {url}")
+        soup = fetch_page(url, use_playwright=True)
+        if soup is not None:
+            result = _run_pipeline(soup, store_id)
+            if result:
+                return result
 
     logger.error(f"Todos os métodos de extração falharam para: {url}")
     return base

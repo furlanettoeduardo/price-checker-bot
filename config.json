@@ -11,64 +11,109 @@
   },
   "products": [
     {
-      "name": "Memória RAM Corsair Vengeance, 32GB (2X16GB), 6000MHz, DDR5, CL36, Preto - CMK32GX5M2E6000C36",
+      "name": "Processador AMD Ryzen 7 9800X3D 8-Core 16-Threads AM5",
+      "store": "Pichau",
+      "url": "https://www.pichau.com.br/processador-amd-ryzen-7-9800x3d-8-core-16-threads-4-7ghz-5-2ghz-turbo-cache-104mb-am5-100-100001084wof",
+      "price_selectors": [
+        ".price",
+        ".valor",
+        "[class*='price']",
+        "[class*='valor']"
+      ]
+    },
+    {
+      "name": "Placa Mae MSI PRO B850M-P WiFi AM5 DDR5",
       "store": "Kabum",
-      "url": "https://www.kabum.com.br/produto/506124/memoria-ram-corsair-vengeance-32gb-2x16gb-6000mhz-ddr5-cl36-preto-cmk32gx5m2e6000c36",
+      "url": "https://www.kabum.com.br/produto/887689/placa-mae-msi-pro-b850m-p-wifi-amd-am5-matx-ddr5-bluetooth-preto-pro-b850m-p-wifi",
       "price_selectors": [
         "h4.finalPrice",
         ".priceCard",
         "[class*='finalPrice']",
         "[data-testid='new-price']",
-        ".regularPrice",
-        "#main-content > div.flex.flex-col.gap-8.tablet\\:gap-16.desktop\\:gap-32.bg-white > div.container-lg.relative > div.grid.grid-cols-4.tablet\\:grid-cols-6.desktop\\:grid-cols-12.gap-16.desktop\\:gap-32.mt-16 > div.flex.flex-col.col-span-4.tablet\\:col-span-6.desktop\\:col-span-3.order-3.desktop\\:top-\\[88px\\].desktop\\:z-\\[9\\].h-fit.gap-16.desktop\\:sticky > div.w-full.p-8.rounded-8.border-solid.border.border-black-400 > h4"
+        ".regularPrice"
       ]
     },
     {
-      "url": "https://www.kabum.com.br/produto/706473/placa-de-video-asus-prime-rtx-5070-ti-o16g-nvidia-geforce-16gb-gddr7-ia-com-fp4-e-dlss4-edicao-oc-90yv0mf0-m0na00",
-      "name": "Placa De Video Asus Prime Rtx 5070 Ti O16G Nvidia Geforce 16Gb Gddr7 Ia Com Fp4",
-      "store": "Kabum"
+      "name": "Memoria RAM Kingston Fury Beast 16GB DDR5 6000 CL36 (1/2)",
+      "store": "Kabum",
+      "url": "https://www.kabum.com.br/produto/708329/memoria-ram-kingston-fury-beast-16gb-6000mt-s-ddr5-cl36-dimm-preto-expo-kf560c36bbe2-16",
+      "price_selectors": [
+        "h4.finalPrice",
+        ".priceCard",
+        "[class*='finalPrice']",
+        "[data-testid='new-price']",
+        ".regularPrice"
+      ]
     },
     {
+      "name": "Memoria RAM Kingston Fury Beast 16GB DDR5 6000 CL36 (2/2)",
+      "store": "Kabum",
+      "url": "https://www.kabum.com.br/produto/708329/memoria-ram-kingston-fury-beast-16gb-6000mt-s-ddr5-cl36-dimm-preto-expo-kf560c36bbe2-16",
+      "price_selectors": [
+        "h4.finalPrice",
+        ".priceCard",
+        "[class*='finalPrice']",
+        "[data-testid='new-price']",
+        ".regularPrice"
+      ]
+    },
+    {
+      "name": "SSD Kingston Fury Renegade 1TB NVMe PCIe 4.0",
+      "store": "Pichau",
+      "url": "https://www.pichau.com.br/ssd-kingston-fury-renegade-1tb-m-2-2280-pcie-nvme-leitura-7300mb-s-gravacao-6000mb-s-sfyrsk-1000g",
+      "price_selectors": [
+        ".price",
+        ".valor",
+        "[class*='price']",
+        "[class*='valor']"
+      ]
+    },
+    {
+      "name": "Water Cooler MSI MAG CoreLiquid A13 ARGB 240mm",
+      "store": "Kabum",
+      "url": "https://www.kabum.com.br/produto/679305/water-cooler-msi-mag-coreliquid-a13-argb-240mm-intel-e-amd-preto-mag-coreliquid-a13-240",
+      "price_selectors": [
+        "h4.finalPrice",
+        ".priceCard",
+        "[class*='finalPrice']",
+        "[data-testid='new-price']",
+        ".regularPrice"
+      ]
+    },
+    {
+      "name": "Fonte Corsair RM750e 750W ATX 3.1 PCIe 5.1",
+      "store": "Terabyteshop",
       "url": "https://www.terabyteshop.com.br/produto/37186/fonte-corsair-rm750e-750w-cybenetics-gold-pcie-51-full-modular-preto-cp-9020295-br",
-      "name": "Fonte Corsair Rm750E 750W Cybenetics Gold Pcie 51 Full Modular Preto Cp 9020295 ",
-      "store": "Terabyteshop"
+      "price_selectors": [
+        ".val-prod",
+        ".preco",
+        "[class*='price']"
+      ]
     },
     {
-      "url": "https://www.pichau.com.br/gabinete-cooler-master-elite-481-wood-argb-mini-tower-lateral-de-vidro-com-3-fans-preto-e481-khnn-s00",
-      "name": "Gabinete Cooler Master Elite 481 Wood Argb Mini Tower Lateral De Vidro Com 3 Fan",
-      "store": "Pichau"
-    },
-    {
-      "url": "https://www.pichau.com.br/placa-mae-gigabyte-b760m-gaming-x-gen5-ddr5-lga1700-m-atx-chipset-intel-b760-b760m-gaming-x-ddr5-gen5",
-      "name": "Placa Mae Gigabyte B760M Gaming X Gen5 Ddr5 Lga1700 M Atx Chipset Intel B760 B76",
-      "store": "Pichau"
+      "name": "Gabinete Lian Li Vector V100X RGB Mid Tower",
+      "store": "Terabyteshop",
+      "url": "https://www.terabyteshop.com.br/produto/37564/gabinete-gamer-lian-li-vector-v100-rgb-mid-tower-vidro-temperado-e-atx-sem-fonte-sem-fan-black-v100x",
+      "price_selectors": [
+        ".val-prod",
+        ".preco",
+        "[class*='price']"
+      ]
     },
     {
       "url": "https://loja.cockpitextremeracing.com.br/products/cockpit-speedtrack-st?variant=51124156596505",
       "name": "Cockpit Speedtrack St",
-      "use_playwright": true,
-      "price_selectors": [
-        "#product-info > div.col-span-full.w-full.md\\:col-start-8.md\\:col-end-12 > div > div.mt-6.flex.flex-col.space-y-1.md\\:mt-8 > div.flex.items-center.gap-4.w-full > h3"
-      ]
-    },
-    {
-      "url": "https://www.exootics.com.br/produtos/uniforme-t1-champions-2025-b5zvt/",
-      "name": "Uniforme T1 Champions 2025 B5Zvt",
-      "store": "Exootics",
-      "use_playwright": true,
-      "price_selectors": [
-        "#price_display"
-      ]
-    },
-    {
-      "url": "https://www.kingssimuladores.com.br/71knhkwon-/pedal-active-moza-racing-mbooster-com-feedback-suporte",
-      "name": "Pedal Active Moza Racing Mbooster Com Feedback Suporte",
-      "store": "Kingssimuladores"
+      "use_playwright": true
     },
     {
       "url": "https://loja.prsim.com.br/produto/pedal-prs-3-sport-base-de-fixacao/",
       "name": "Pedal Prs 3 Sport Base De Fixacao",
       "use_playwright": true
+    },
+    {
+      "url": "https://www.kabum.com.br/produto/954621/base-alpha-evo-simagic-9nm-simulador-extreme-simracing?gclsrc=aw.ds&&utm_id=21434223541&gad_source=1&gad_campaignid=21423803016&gbraid=0AAAAADx-HyEBlrupsMH_FLxtajE9JbctU",
+      "name": "Base Alpha Evo Simagic 9Nm Simulador Extreme Simracing",
+      "store": "Kabum"
     }
   ]
 }

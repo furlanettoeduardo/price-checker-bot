@@ -33,6 +33,10 @@ logger = logging.getLogger(__name__)
 # ── Seletores CSS por framework / padrão comum ───────────────────────────────
 # Cada tupla: (seletor, confiança, atributo_ou_None_para_text)
 _PRICE_CANDIDATES: list[tuple[str, float, Optional[str]]] = [
+    # ── WooCommerce (preço principal em resumo do produto) ──────────────
+    (".product .summary .price .woocommerce-Price-amount", 0.92, None),
+    (".summary .price .woocommerce-Price-amount",          0.90, None),
+    (".product .price .woocommerce-Price-amount",          0.88, None),
     # ── Microdata ─────────────────────────────────────────────────────────
     ("[itemprop='price'][content]",    0.92, "content"),
     ("[itemprop='price']",             0.88, None),
