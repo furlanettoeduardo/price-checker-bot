@@ -63,8 +63,15 @@ def setup_logging(level: str = "INFO") -> None:
     file_handler.setFormatter(formatter)
     file_handler.setLevel(numeric_level)
 
-    # Handler de console (saída em tempo real)
-    console_handler = logging.StreamHandler(sys.stdout)
+    # Handler de console (saída em tempo real — força UTF-8 no Windows)
+    if hasattr(sys.stdout, "buffer"):
+        import io as _io
+        _console_stream = _io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace"
+        )
+    else:
+        _console_stream = sys.stdout
+    console_handler = logging.StreamHandler(_console_stream)
     console_handler.setFormatter(formatter)
     console_handler.setLevel(numeric_level)
 

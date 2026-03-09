@@ -216,6 +216,27 @@ def _fill_supplementary(
         except Exception as exc:
             logger.debug(f"[Supplementary] Erro no scraper de '{store_id}': {exc}")
 
+    # ── Valida campos suplementares ──────────────────────────────────────
+    price = result.get("price")
+
+    # preco_sem_promocao deve ser MAIOR que o preço atual
+    sem_promo = result.get("preco_sem_promocao")
+    if sem_promo is not None and price is not None and sem_promo <= price:
+        logger.debug(
+            f"[Supplementary] preco_sem_promocao R$ {sem_promo:.2f} descartado "
+            f"(não é maior que price R$ {price:.2f})"
+        )
+        result["preco_sem_promocao"] = None
+
+    # preco_pix deve ser MENOR que o preço atual (é sempre um desconto)
+    pix = result.get("preco_pix")
+    if pix is not None and price is not None and pix >= price:
+        logger.debug(
+            f"[Supplementary] preco_pix R$ {pix:.2f} descartado "
+            f"(não é menor que price R$ {price:.2f})"
+        )
+        result["preco_pix"] = None
+
     if all(result.get(f) is not None for f in SUPP_FIELDS):
         return result
 

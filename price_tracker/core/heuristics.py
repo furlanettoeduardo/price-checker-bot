@@ -159,7 +159,8 @@ def extract_supplementary_fields(soup: BeautifulSoup) -> dict:
         if not raw:
             continue
         pix = normalize_price(raw)
-        if pix is not None and pix > 0:
+        # Ignora valores absurdos (< R$ 20 ou > R$ 500.000)
+        if pix is not None and pix >= 20.0 and pix <= 500_000:
             result["preco_pix"] = pix
             logger.info(f"[Suplementar] Preco Pix/Vista encontrado: R$ {pix:.2f}")
             break
@@ -174,7 +175,10 @@ def extract_supplementary_fields(soup: BeautifulSoup) -> dict:
     for m in _INSTALL_RE.finditer(full_text):
         count = int(m.group(1))
         value = normalize_price(m.group(2))
-        if value is None or count < 2:
+        # Limites realistas: 2–48 parcelas, valor por parcela R$ 5–50.000
+        if value is None or count < 2 or count > 48:
+            continue
+        if value < 5.0 or value > 50_000:
             continue
         # Prefere o maior numero de parcelas (oferta principal da loja)
         if best_count is None or count > best_count:

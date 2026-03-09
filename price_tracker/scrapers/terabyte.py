@@ -60,49 +60,128 @@ def extract_supplementary(soup: BeautifulSoup) -> dict:
     """
     Extrai campos suplementares específicos da Terabyte Shop.
 
-    A Terabyte injeta preços via setTimeout(JS), populando:
-      .val-prod       → preço principal ("R$ 684,99")
-      #label-val-prod → texto de desconto Pix ("15% de desconto à vista no boleto ou pix")
-      .valParc        → total parcelado ("R$ 805,87")
-      .nParc          → número de parcelas ("12x")
-      .Parc           → valor por parcela ("R$ 67,16")
-
-    Como baixamos HTML estático (sem executar JS), extraímos esses valores
-    diretamente do texto-fonte do script via regex.
+    Estratégia em duas camadas:
+    1) Seletores CSS diretos no HTML estático (presentes mesmo sem executar JS):
+       - del / [class*='old-price']  → preco_sem_promocao
+       - p.valVista / p.val-prod     → preco_pix (valor real)
+       - span.valParc                → preco_parcelado (total no cartão)
+       - span.nParc / .Parc         → parcelas / valor-por-parcela
+    2) Extração via regex no script JS inline (fallback ou JS-rendered).
     """
     extra: dict = {}
 
-    # ── Extrai do script JS inline da Terabyte ────────────────────────────
+    # ── 1) Seletores CSS diretos no HTML estático ──────────────────────────
+
+    # Preço sem promoção (riscado)
+    # Varre todos os elementos 'del' e pega o primeiro com valor > 0
+    # (evita capturar preços de produtos relacionados na mesma página)
+    for sel in [".prod-old-price span", "#prod-old-price", "[class*='old-price']", ".preco-antigo"]:
+        try:
+            el = soup.select_one(sel)
+            if el is None:
+                continue
+            raw = el.get_text(separator=" ", strip=True)
+            old = normalize_price(raw)
+            if old and old > 0:
+                extra["preco_sem_promocao"] = old
+                logger.info(f"[Terabyte/Supplementary] Preço sem promoção: R$ {old:.2f}")
+                break
+        except Exception:
+            pass
+    # Fallback: primeiro 'del' dentro do bloco de preço do produto
+    if not extra.get("preco_sem_promocao"):
+        for sel in ["#prod-new-price del", ".prod-new-price del", ".prod-price del", "del"]:
+            try:
+                for el in soup.select(sel):
+                    old = normalize_price(el.get_text(separator=" ", strip=True))
+                    if old and old > 0:
+                        extra["preco_sem_promocao"] = old
+                        logger.info(f"[Terabyte/Supplementary] Preço sem promoção (del): R$ {old:.2f}")
+                        break
+                if extra.get("preco_sem_promocao"):
+                    break
+            except Exception:
+                pass
+
+    # Preço pix/vista (classe valVista presente no HTML estático)
+    for sel in ["p.valVista", ".val-prod.valVista", "[class*='valVista']",
+                "#prod-pix-price span", ".prod-pix-price span", "[class*='pix-price']"]:
+        try:
+            el = soup.select_one(sel)
+            if el is None:
+                continue
+            pix = normalize_price(el.get_text(separator=" ", strip=True))
+            if pix and pix > 0:
+                extra["preco_pix"] = pix
+                logger.info(f"[Terabyte/Supplementary] Pix (CSS): R$ {pix:.2f}")
+                break
+        except Exception:
+            pass
+
+    # Total parcelado (valParc presente no HTML estático)
+    for sel in ["span.valParc", "[class*='valParc']", ".prod-parcel span",
+                "#prod-parcel", "[class*='parcel']"]:
+        try:
+            el = soup.select_one(sel)
+            if el is None:
+                continue
+            total = normalize_price(el.get_text(separator=" ", strip=True))
+            if total and total > 0:
+                extra["preco_parcelado"] = total
+                break
+        except Exception:
+            pass
+
+    # Número de parcelas (nParc)
+    for sel in ["span.nParc", "[class*='nParc']"]:
+        try:
+            el = soup.select_one(sel)
+            if el is None:
+                continue
+            m = re.search(r"(\d+)", el.get_text(strip=True))
+            if m:
+                extra["parcelas"] = int(m.group(1))
+                break
+        except Exception:
+            pass
+
+    if extra.get("parcelas") and extra.get("preco_parcelado"):
+        logger.info(f"[Terabyte/Supplementary] {extra['parcelas']}x total R$ {extra['preco_parcelado']:.2f}")
+
+    # ── 2) Fallback: extrai do script JS inline ──────────────────────────
     for script in soup.find_all("script"):
         text = script.string or ""
         if ".valParc" not in text and ".nParc" not in text:
             continue
 
         # Parcelas: $('.nParc').text('12x');
-        m = re.search(r"\.nParc'\)\.text\('(\d+)x'\)", text)
-        if m:
-            extra["parcelas"] = int(m.group(1))
+        if not extra.get("parcelas"):
+            m = re.search(r"\.nParc'\)\.text\('(\d+)x'\)", text)
+            if m:
+                extra["parcelas"] = int(m.group(1))
 
         # Valor por parcela: $('.Parc').text('R$ 67,16');
-        m = re.search(r"\.Parc'\)\.text\('([^']+)'\)", text)
-        if m:
-            v = normalize_price(m.group(1))
-            if v:
-                extra["preco_parcelado"] = v
+        # Usa para calcular total quando valParc não veio do CSS
+        if not extra.get("preco_parcelado"):
+            m = re.search(r"\.Parc'\)\.text\('([^']+)'\)", text)
+            if m:
+                v = normalize_price(m.group(1))
+                if v:
+                    extra["preco_parcelado"] = v
 
         # Desconto Pix/boleto: $('#label-val-prod').text('15% de desconto ...');
-        m = re.search(r"#label-val-prod'\)\.text\('([^']*)'\)", text)
-        if m:
-            pct_m = re.search(r"(\d{1,2})%", m.group(1))
-            # Busca preço base no mesmo script: $('.val-prod').text('R$ 684,99');
-            price_m = re.search(r"\.val-prod'\)\.text\('([^']+)'\)", text)
-            if pct_m and price_m:
-                pct = int(pct_m.group(1))
-                base = normalize_price(price_m.group(1))
-                if base:
-                    pix = round(base * (1 - pct / 100), 2)
-                    extra["preco_pix"] = pix
-                    logger.info(f"[Terabyte/Supplementary] Pix: R$ {pix:.2f} ({pct}% sobre R$ {base:.2f})")
+        if not extra.get("preco_pix"):
+            m = re.search(r"#label-val-prod'\)\.text\('([^']*)'\)", text)
+            if m:
+                pct_m = re.search(r"(\d{1,2})%", m.group(1))
+                price_m = re.search(r"\.val-prod'\)\.text\('([^']+)'\)", text)
+                if pct_m and price_m:
+                    pct = int(pct_m.group(1))
+                    base = normalize_price(price_m.group(1))
+                    if base:
+                        pix = round(base * (1 - pct / 100), 2)
+                        extra["preco_pix"] = pix
+                        logger.info(f"[Terabyte/Supplementary] Pix (JS): R$ {pix:.2f} ({pct}% sobre R$ {base:.2f})")
         break  # script encontrado — sai do loop
 
     # ── Fallback CSS para parcelas (quando JS executou via Playwright) ────

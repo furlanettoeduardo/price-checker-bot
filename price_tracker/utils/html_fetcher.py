@@ -30,14 +30,14 @@ except ImportError:
 try:
     from playwright.sync_api import sync_playwright as _sync_playwright
     _PLAYWRIGHT_AVAILABLE = True
-except ImportError:
+except Exception:  # ImportError, OSError ou falha de inicialização
     _PLAYWRIGHT_AVAILABLE = False
-    logger.debug("playwright não instalado — fallback JS desabilitado.")
+    logger.debug("playwright não instalado ou falhou ao inicializar — fallback JS desabilitado.")
 
 try:
     from playwright_stealth import Stealth as _Stealth
     _STEALTH_AVAILABLE = True
-except ImportError:
+except Exception:
     _STEALTH_AVAILABLE = False
     logger.debug("playwright-stealth não instalado — modo stealth desabilitado.")
 
@@ -207,6 +207,7 @@ def _try_playwright(url: str, timeout_ms: int = 30_000) -> Optional[BeautifulSou
     Tenta baixar a página usando Playwright com modo stealth ativado.
 
     Estratégia:
+    - Importa playwright inline a cada chamada para evitar flags obsoletos.
     - Lança Chromium em modo headless com perfil realista de navegador.
     - Aplica playwright-stealth para ocultar fingerprints de automação
       (navigator.webdriver, plugins, etc.) — eficaz contra Cloudflare JS Challenge
@@ -216,16 +217,26 @@ def _try_playwright(url: str, timeout_ms: int = 30_000) -> Optional[BeautifulSou
 
     Retorna BeautifulSoup em caso de sucesso, None caso contrário.
     """
-    if not _PLAYWRIGHT_AVAILABLE:
+    # Import inline: evita depender de flag de módulo que pode ter falhado
+    # transitoriamente na inicialização (problema comum no Windows).
+    try:
+        from playwright.sync_api import sync_playwright as _pw
+    except Exception:
         logger.warning(
             f"Playwright não instalado — não foi possível carregar JS para: {url}. "
             "Execute: pip install playwright && playwright install chromium"
         )
         return None
 
+    try:
+        from playwright_stealth import Stealth as _StealthCls
+        _has_stealth = True
+    except Exception:
+        _has_stealth = False
+
     logger.info(f"[Playwright] Iniciando browser headless para: {url}")
     try:
-        with _sync_playwright() as pw:
+        with _pw() as pw:
             browser = pw.chromium.launch(
                 headless=True,
                 args=[
@@ -246,8 +257,8 @@ def _try_playwright(url: str, timeout_ms: int = 30_000) -> Optional[BeautifulSou
             page = context.new_page()
 
             # Aplica stealth para ocultar sinais de automação
-            if _STEALTH_AVAILABLE:
-                _Stealth().apply_stealth_sync(page)
+            if _has_stealth:
+                _StealthCls().apply_stealth_sync(page)
                 logger.debug("[Playwright] Modo stealth ativado.")
             else:
                 logger.debug("[Playwright] playwright-stealth não disponível — stealth parcial.")

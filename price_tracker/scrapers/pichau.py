@@ -74,6 +74,24 @@ def extract_supplementary(soup: BeautifulSoup) -> dict:
 
     full_text = soup.get_text(separator=" ", strip=True)
 
+    # ── Preço sem promoção (riscado) ─────────────────────────────────────
+    # Pichau usa classe MUI gerada dinâmicamente: 'mui-*-strikeThrough'
+    for sel in ["[class*='strikeThrough']", "[class*='strike-through']",
+                "[class*='oldPrice']", "[class*='old-price']",
+                "s.MuiTypography-root", "del.MuiTypography-root", "del"]:
+        try:
+            el = soup.select_one(sel)
+            if el is None:
+                continue
+            old = normalize_price(el.get_text(separator=" ", strip=True))
+            # Exige valor mínimo de R$ 10 para evitar capturar badges/cents
+            if old and old >= 10.0:
+                extra["preco_sem_promocao"] = old
+                logger.info(f"[Pichau/Supplementary] Preço sem promoção: R$ {old:.2f}")
+                break
+        except Exception:
+            pass
+
     # ── Preço principal para base do cálculo Pix ─────────────────────────
     base_price = None
     for selector in _SELECTORS:
