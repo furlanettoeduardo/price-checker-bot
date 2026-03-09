@@ -26,7 +26,8 @@ from typing import Optional
 # ──────────────────────────────────────────────────────────────────────────────
 # Módulos internos do projeto
 # ──────────────────────────────────────────────────────────────────────────────
-from scraper import extract_price
+# Extrator de preço com estratégia em camadas (JSON-LD → loja → CSS → heurística)
+from price_tracker.core.price_extractor import get_product_price
 from sheets import append_row, connect_to_sheets, get_min_price, is_duplicate
 from notifier import notify_new_low, notify_error
 
@@ -114,13 +115,16 @@ def validate_product(product: dict) -> Optional[str]:
     """
     Valida se um produto do config.json tem todos os campos obrigatórios.
     Retorna None se válido, ou uma string de erro se inválido.
+    price_selectors é opcional — a extração em camadas (JSON-LD → scraper de loja
+    → CSS → heurística) funciona mesmo sem seletores definidos.
     """
-    required = ["name", "store", "url", "price_selectors"]
+    required = ["name", "store", "url"]
     missing = [field for field in required if not product.get(field)]
     if missing:
         return f"Campos ausentes ou vazios: {missing}"
-    if not isinstance(product["price_selectors"], list) or not product["price_selectors"]:
-        return "price_selectors deve ser uma lista não-vazia de seletores CSS"
+    selectors = product.get("price_selectors")
+    if selectors is not None and not isinstance(selectors, list):
+        return "price_selectors deve ser uma lista de strings (ou omitido)"
     return None
 
 
@@ -187,8 +191,11 @@ def run() -> None:
             skip_count += 1
             continue
 
-        # Extrai o preço
-        price = extract_price(url, selectors)
+        # Extrai o preço — tenta em ordem: JSON-LD → scraper de loja → CSS → heurística
+        extraction = get_product_price(url, css_selectors=selectors)
+        price = extraction.get("price")
+        method = extraction.get("method", "?")
+        confidence = extraction.get("confidence", 0.0)
 
         if price is None:
             logger.error(
@@ -204,9 +211,11 @@ def run() -> None:
                     telegram_chat,
                     name,
                     store,
-                    "Nenhum seletor CSS retornou preço válido.",
+                    "Todos os métodos de extração falharam (JSON-LD, scraper, CSS, heurística).",
                 )
             continue
+
+        logger.info(f"  → Método: {method} | Confiança: {confidence:.0%}")
 
         # Calcula mínimo histórico (antes de gravar o novo registro)
         previous_min = get_min_price(sheet, name)

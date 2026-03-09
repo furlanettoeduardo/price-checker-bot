@@ -70,8 +70,19 @@ class ProductDialog(tk.Toplevel):
         self._name_entry, self._store_entry, self._url_entry = self._entries
 
         # ── Seletores CSS ────────────────────────────────────────────────
-        sel_frame = ttk.LabelFrame(self, text="Seletores CSS (um por linha, do mais ao menos específico)", padding=10)
+        sel_frame = ttk.LabelFrame(self, text="Seletores CSS — opcionais (um por linha, do mais ao menos específico)", padding=10)
         sel_frame.pack(fill="both", expand=True, padx=12, pady=4)
+
+        hint = (
+            "ℹ️  A extração usa 4 camadas em sequência:\n"
+            "  1. JSON-LD (dados estruturados da página)\n"
+            "  2. Scraper dedicado da loja (Kabum, Pichau, Amazon, Terabyte)\n"
+            "  3. Seletores CSS abaixo (se informados)\n"
+            "  4. Heurística automática — fallback final"
+        )
+        ttk.Label(sel_frame, text=hint, justify="left", foreground="#555").pack(
+            anchor="w", padx=4, pady=(0, 6)
+        )
 
         self._sel_text = tk.Text(sel_frame, width=60, height=7, font=("Consolas", 10))
         scrollbar = ttk.Scrollbar(sel_frame, command=self._sel_text.yview)
@@ -111,10 +122,6 @@ class ProductDialog(tk.Toplevel):
         if not url:
             messagebox.showwarning("Campo obrigatório", "Informe a URL.", parent=self)
             return
-        if not selectors:
-            messagebox.showwarning("Campo obrigatório", "Adicione pelo menos um seletor CSS.", parent=self)
-            return
-
         self.result = {
             "name": name,
             "store": store,

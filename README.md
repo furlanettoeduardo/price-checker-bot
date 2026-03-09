@@ -9,17 +9,35 @@ Bot em Python que monitora preços de peças de hardware em lojas brasileiras e 
 ```
 price-checker-bot/
 │
-├── main.py           # Orquestrador principal — ponto de entrada
-├── scraper.py        # Extração de preços via BeautifulSoup
-├── sheets.py         # Integração com Google Sheets
-├── notifier.py       # Alertas via Telegram (opcional)
-├── config_gui.py     # Interface gráfica para configurar o bot (Tkinter)
-├── config.json       # Configuração de produtos e credenciais
-├── requirements.txt  # Dependências Python
-├── .gitignore        # Arquivos ignorados pelo Git
-├── credentials.json  # ⚠️ NÃO versionar — credenciais do Google
+├── main.py              # Orquestrador principal — ponto de entrada
+├── scraper.py           # Shim de compatibilidade (delega para price_tracker/)
+├── sheets.py            # Integração com Google Sheets
+├── notifier.py          # Alertas via Telegram (opcional)
+├── config_gui.py        # Interface gráfica para configurar o bot (Tkinter)
+├── config.json          # Configuração de produtos e credenciais
+├── requirements.txt     # Dependências Python
+├── .gitignore           # Arquivos ignorados pelo Git
+├── credentials.json     # ⚠️ NÃO versionar — credenciais do Google
+├── price_tracker/       # Pacote principal de extração de preços
+│   ├── core/
+│   │   ├── price_extractor.py   # Orquestrador das 4 camadas
+│   │   ├── jsonld_parser.py      # Camada 1 — JSON-LD (dados estruturados)
+│   │   ├── store_detector.py     # Detecta a loja pela URL
+│   │   └── heuristics.py         # Camada 4 — heurística por pontuação
+│   ├── scrapers/
+│   │   ├── kabum.py              # Camada 2 — scraper dedicado Kabum
+│   │   ├── pichau.py             # Camada 2 — scraper dedicado Pichau
+│   │   ├── amazon.py             # Camada 2 — scraper dedicado Amazon
+│   │   └── terabyte.py           # Camada 2 — scraper dedicado Terabyte
+│   └── utils/
+│       ├── html_fetcher.py       # HTTP com cache, retry e backoff
+│       └── price_parser.py       # Normalização de preço (R$ 3.499,90 → 3499.90)
+├── tests/               # Testes unitários (pytest)
+│   ├── test_price_parser.py
+│   ├── test_jsonld_parser.py
+│   └── test_heuristics.py
 └── logs/
-    └── price_tracker.log  # Logs gerados automaticamente
+    └── price_tracker.log    # Logs gerados automaticamente
 ```
 
 ---
@@ -97,7 +115,24 @@ pip install -r requirements.txt
 > O bot criará automaticamente o cabeçalho na primeira execução.
 
 ---
+## 🧱 Arquitetura de Extração de Preços
 
+O bot utiliza uma **estratégia em 4 camadas**, tentando cada método em ordem do mais ao menos confiável:
+
+| Camada | Método | Confiança | Descrição |
+|--------|---------|-----------|------------|
+| 1 | **JSON-LD** | 98% | Lê dados estruturados `<script type="application/ld+json">` — o mais estável |
+| 2 | **Scraper de loja** | 88–92% | Seletores CSS dedicados por loja (Kabum, Pichau, Amazon, Terabyte) |
+| 3 | **Seletores CSS do config** | 75% | Seletores definidos manualmente no `config.json` |
+| 4 | **Heurística** | 30–85% | Regex + pontuação de elementos — fallback automático |
+
+> Os seletores CSS do `config.json` são **opcionais** — as camadas 1, 2 e 4 funcionam sem eles.
+
+**Para adicionar suporte a uma nova loja:**
+1. Crie `price_tracker/scrapers/<loja>.py` com a função `extract(soup) -> dict | None`
+2. Adicione a entrada em `STORE_MAP` no arquivo `price_tracker/core/store_detector.py`
+
+---
 ## �️ Interface Gráfica de Configuração
 
 Para facilitar a configuração do bot sem editar o `config.json` diretamente, utilize a interface gráfica:
@@ -128,7 +163,7 @@ python config_gui.py
 | **🗑️ Remover** | Remove com confirmação |
 | **⬆ / ⬇ Reordenar** | Muda a ordem de verificação dos produtos |
 
-No formulário de produto, os **seletores CSS** são inseridos um por linha, do mais específico para o mais genérico. O bot tentará cada um em sequência até encontrar o preço.
+No formulário de produto, os **seletores CSS** são inseridos um por linha, do mais específico para o mais genérico, e são **opcionais** — o bot já tenta JSON-LD, scraper de loja e heurística automática antes de depender deles.
 
 ### Salvando
 
@@ -174,7 +209,7 @@ Clique em **"Salvar configurações"** — o `config.json` é atualizado imediat
 | `name`            | ✅          | Nome do produto (usado como identificador único)            |
 | `store`           | ✅          | Nome da loja                                               |
 | `url`             | ✅          | URL completa da página do produto                          |
-| `price_selectors` | ✅          | Lista de seletores CSS, tentados em ordem até o primeiro sucesso |
+| `price_selectors` | ☐ opcional  | Lista de seletores CSS (camada 3 de 4 — pode ser omitida)  |
 
 ### Como descobrir o seletor CSS correto
 
@@ -185,13 +220,16 @@ Clique em **"Salvar configurações"** — o `config.json` é atualizado imediat
 
 **Exemplos por loja:**
 
-| Loja      | Seletores comuns                                              |
-|-----------|---------------------------------------------------------------|
-| Kabum     | `h4.finalPrice`, `.priceCard`, `[data-testid='new-price']`   |
-| Pichau    | `.MuiTypography-h1`, `[class*='price']`, `.productPrice`     |
-| Terabyte  | `.prod-new-price span`, `#prod-new-price`, `.val_principal`  |
-| Americanas| `.priceSales`, `[class*='price']`                            |
-| Mercado Livre | `.andes-money-amount__fraction`, `[class*='price-tag']`  |
+> ℹ️  Para **Kabum, Pichau, Amazon e Terabyte** o bot já possui scrapers dedicados — os seletores CSS abaixo são um complemento opcional:
+
+| Loja          | Seletores comuns (se precisar personalizar)                   |
+|---------------|---------------------------------------------------------------|
+| Kabum         | `h4.finalPrice`, `.priceCard`, `[data-testid='new-price']`   |
+| Pichau        | `.MuiTypography-h1`, `[class*='price']`, `.productPrice`     |
+| Terabyte      | `.prod-new-price span`, `#prod-new-price`, `.val_principal`  |
+| Amazon        | `.a-price-whole`, `.a-offscreen`, `[class*='apexPriceToPay']`|
+| Americanas    | `.priceSales`, `[class*='price']`                            |
+| Mercado Livre | `.andes-money-amount__fraction`, `[class*='price-tag']`      |
 
 ---
 
@@ -226,7 +264,7 @@ python main.py
 2026-03-08 10:00:00 [INFO    ] __main__:   Conectando ao Google Sheets...
 2026-03-08 10:00:02 [INFO    ] sheets: Conectado à planilha 'Price Tracker' com sucesso.
 2026-03-08 10:00:02 [INFO    ] __main__: [1/3] Verificando: RTX 4070 Super (Kabum)
-2026-03-08 10:00:05 [INFO    ] scraper: ✓ Preço extraído com seletor 'h4.finalPrice': R$ 3.499,90
+2026-03-08 10:00:05 [INFO    ] __main__:   → Método: jsonld | Confiança: 98%
 2026-03-08 10:00:06 [INFO    ] sheets: Linha adicionada: [RTX 4070 Super] R$ 3.499,90 em 2026-03-08
 2026-03-08 10:00:06 [INFO    ] __main__:   RESUMO: ✓ 3 registrados | → 0 pulados | ✗ 0 erros
 ```
