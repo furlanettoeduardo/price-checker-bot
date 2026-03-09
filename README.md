@@ -1,120 +1,119 @@
-﻿# ðŸ¤– Price Checker Bot
+﻿# 🤖 Price Checker Bot
 
-Bot em Python que monitora preÃ§os de produtos em lojas brasileiras e registra o histÃ³rico em uma planilha do Google Sheets, com alertas via Telegram e interface grÃ¡fica completa.
+Bot em Python que monitora preços de produtos em lojas brasileiras e registra o histórico em uma planilha do Google Sheets, com alertas via Telegram e interface gráfica completa.
 
 ---
 
-## ðŸ“ Estrutura do Projeto
+## 📁 Estrutura do Projeto
 
 ```
 price-checker-bot/
-â”‚
-â”œâ”€â”€ app.py               # Interface grÃ¡fica principal (launcher + configuraÃ§Ãµes)
-â”œâ”€â”€ main.py              # Orquestrador principal â€” pode ser chamado diretamente
-â”œâ”€â”€ config_gui.py        # Editor de configuraÃ§Ã£o standalone (legado / opcional)
-â”œâ”€â”€ sheets.py            # IntegraÃ§Ã£o com Google Sheets
-â”œâ”€â”€ notifier.py          # Alertas via Telegram (opcional)
-â”œâ”€â”€ config.json          # ConfiguraÃ§Ã£o de produtos e credenciais
-â”œâ”€â”€ credentials.json     # âš ï¸ NÃƒO versionar â€” credenciais do Google
-â”œâ”€â”€ requirements.txt     # DependÃªncias Python
-â”œâ”€â”€ build.py             # Script de empacotamento para .exe (PyInstaller)
-â”œâ”€â”€ build.bat            # Atalho: chama venv\Scripts\python.exe build.py
-â”‚
-â”œâ”€â”€ price_tracker/       # Pacote principal de extraÃ§Ã£o de preÃ§os
-â”‚   â”œâ”€â”€ core/
-â”‚   â”‚   â”œâ”€â”€ price_extractor.py   # Orquestrador das 4 camadas
-â”‚   â”‚   â”œâ”€â”€ jsonld_parser.py     # Camada 1 â€” JSON-LD (dados estruturados)
-â”‚   â”‚   â”œâ”€â”€ store_detector.py    # Detecta a loja pela URL
-â”‚   â”‚   â””â”€â”€ heuristics.py        # Camada 4 â€” heurÃ­stica por pontuaÃ§Ã£o
-â”‚   â”œâ”€â”€ scrapers/
-â”‚   â”‚   â”œâ”€â”€ kabum.py             # Scraper dedicado Kabum
-â”‚   â”‚   â”œâ”€â”€ pichau.py            # Scraper dedicado Pichau
-â”‚   â”‚   â”œâ”€â”€ amazon.py            # Scraper dedicado Amazon
-â”‚   â”‚   â””â”€â”€ terabyte.py          # Scraper dedicado Terabyte
-â”‚   â””â”€â”€ utils/
-â”‚       â”œâ”€â”€ html_fetcher.py      # HTTP com cache, retry, cloudscraper e Playwright
-â”‚       â””â”€â”€ price_parser.py      # NormalizaÃ§Ã£o (R$ 3.499,90 â†’ 3499.90)
-â”‚
-â”œâ”€â”€ tests/               # Testes unitÃ¡rios (pytest)
-â””â”€â”€ logs/
-    â””â”€â”€ price_tracker.log
+│
+├── app.py               # Interface gráfica principal (launcher + configurações)
+├── main.py              # Orquestrador principal — pode ser chamado diretamente
+├── config_gui.py        # Editor de configuração standalone (legado / opcional)
+├── sheets.py            # Integração com Google Sheets
+├── notifier.py          # Alertas via Telegram (opcional)
+├── config.json          # Configuração de produtos e credenciais
+├── credentials.json     # ⚠️ NÃO versionar — credenciais do Google
+├── requirements.txt     # Dependências Python
+├── build.py             # Script de empacotamento para .exe (PyInstaller)
+├── build.bat            # Atalho: chama venv\Scripts\python.exe build.py
+│
+├── price_tracker/       # Pacote principal de extração de preços
+│   ├── core/
+│   │   ├── price_extractor.py   # Orquestrador das 4 camadas
+│   │   ├── jsonld_parser.py     # Camada 1 — JSON-LD (dados estruturados)
+│   │   ├── store_detector.py    # Detecta a loja pela URL
+│   │   └── heuristics.py        # Camada 4 — heurística por pontuação
+│   ├── scrapers/
+│   │   ├── kabum.py             # Scraper dedicado Kabum
+│   │   ├── pichau.py            # Scraper dedicado Pichau
+│   │   ├── amazon.py            # Scraper dedicado Amazon
+│   │   └── terabyte.py          # Scraper dedicado Terabyte
+│   └── utils/
+│       ├── html_fetcher.py      # HTTP com cache, retry, cloudscraper e Playwright
+│       └── price_parser.py      # Normalização (R$ 3.499,90 → 3499.90)
+│
+├── tests/               # Testes unitários (pytest)
+└── logs/
+    └── price_tracker.log
 ```
 
 ---
 
-## ðŸ–¥ï¸ Interface GrÃ¡fica (app.py)
+## 🖥️ Interface Gráfica (app.py)
 
-O `app.py` Ã© o ponto de entrada principal. ReÃºne em uma Ãºnica janela:
+O `app.py` é o ponto de entrada principal. Reúne em uma única janela:
 
-| Aba | FunÃ§Ã£o |
+| Aba | Função |
 |-----|--------|
-| **â–¶ Monitoramento** | BotÃ£o de execuÃ§Ã£o, barra de progresso e log em tempo real |
-| **âš™ï¸ ConfiguraÃ§Ãµes** | Google Sheets, Telegram e opÃ§Ãµes gerais |
-| **ðŸ“¦ Produtos** | Adicionar, editar, remover e reordenar produtos monitorados |
-| **ðŸª Lojas** | Gerenciar o mapeamento domÃ­nio â†’ scraper dedicado |
+| **▶ Monitoramento** | Botão de execução, barra de progresso e log em tempo real |
+| **⚙️ Configurações** | Google Sheets, Telegram e opções gerais |
+| **📦 Produtos** | Adicionar, editar, remover e reordenar produtos monitorados |
+| **🏪 Lojas** | Gerenciar o mapeamento domínio → scraper dedicado |
 
 Para iniciar:
 
 ```bash
-# Com ambiente virtual ativo
 python app.py
 ```
 
-### Aba â–¶ Monitoramento
+### Aba ▶ Monitoramento
 
-- Clique em **â–¶ Iniciar** para disparar a verificaÃ§Ã£o de todos os produtos.
+- Clique em **▶ Iniciar** para disparar a verificação de todos os produtos.
 - A barra de progresso mostra `[produto atual / total]`.
 - O log exibe INFO, DEBUG, WARNING e ERROR com cores distintas.
-- O bot roda em thread separada â€” a interface nÃ£o trava durante a execuÃ§Ã£o.
+- O bot roda em thread separada — a interface não trava durante a execução.
 
-### Aba âš™ï¸ ConfiguraÃ§Ãµes
+### Aba ⚙️ Configurações
 
-| Campo | DescriÃ§Ã£o |
+| Campo | Descrição |
 |---|---|
 | Arquivo de credenciais | Caminho para o `credentials.json` do Google |
 | Nome da planilha | Nome exato da planilha no Google Drive |
 | Ativar Telegram | Liga/desliga os alertas |
 | Bot Token | Token fornecido pelo @BotFather |
 | Chat ID | ID do chat para receber os alertas |
-| Alertar em novo mÃ­nimo | Envia mensagem quando o preÃ§o bate recorde |
+| Alertar em novo mínimo | Envia mensagem quando o preço bate recorde |
 
-### Aba ðŸ“¦ Produtos
+### Aba 📦 Produtos
 
-| AÃ§Ã£o | Como usar |
+| Ação | Como usar |
 |---|---|
-| **âž• Adicionar** | Abre formulÃ¡rio para cadastro de novo produto |
-| **âœï¸ Editar** | Edita o produto selecionado (duplo clique tambÃ©m funciona) |
-| **ðŸ—‘ï¸ Remover** | Remove com confirmaÃ§Ã£o |
-| **â¬† / â¬‡ Reordenar** | Muda a ordem de verificaÃ§Ã£o |
+| **➕ Adicionar** | Abre formulário para cadastro de novo produto |
+| **✏️ Editar** | Edita o produto selecionado (duplo clique também funciona) |
+| **🗑️ Remover** | Remove com confirmação |
+| **⬆ / ⬇ Reordenar** | Muda a ordem de verificação |
 
-Os **seletores CSS** sÃ£o opcionais â€” o bot tenta JSON-LD, scraper dedicado e heurÃ­stica automÃ¡tica antes de depender deles. O campo **`use_playwright`** ativa o browser headless para pÃ¡ginas com preÃ§os renderizados via JavaScript.
+Os **seletores CSS** são opcionais — o bot tenta JSON-LD, scraper dedicado e heurística automática antes de depender deles. O campo **`use_playwright`** ativa o browser headless para páginas com preços renderizados via JavaScript.
 
-### Aba ðŸª Lojas
+### Aba 🏪 Lojas
 
 Gerencia o `STORE_MAP` em `price_tracker/core/store_detector.py`.
 
-| AÃ§Ã£o | Como usar |
+| Ação | Como usar |
 |---|---|
-| **âž• Adicionar** | Informa domÃ­nio (ex: `americanas`) e ID do scraper |
-| **ðŸ—‘ï¸ Remover** | Remove domÃ­nios personalizados (builtins sÃ£o protegidos) |
-| **ðŸ“„ Criar / Abrir Template** | Cria `price_tracker/scrapers/<id>.py` com estrutura pronta |
+| **➕ Adicionar** | Informa domínio (ex: `americanas`) e ID do scraper |
+| **🗑️ Remover** | Remove domínios personalizados (builtins são protegidos) |
+| **📄 Criar / Abrir Template** | Cria `price_tracker/scrapers/<id>.py` com estrutura pronta |
 
 **Fluxo para adicionar uma nova loja:**
-1. Clique em **âž• Adicionar** na aba Lojas
-2. Informe o fragmento do domÃ­nio (ex: `americanas`)
+1. Clique em **➕ Adicionar** na aba Lojas
+2. Informe o fragmento do domínio (ex: `americanas`)
 3. Deixe "Criar arquivo de scraper template" marcado e clique em **Adicionar**
 4. Preencha os seletores no arquivo gerado
-5. Clique em **Salvar configuraÃ§Ãµes** â€” o `store_detector.py` Ã© atualizado
+5. Clique em **Salvar configurações** — o `store_detector.py` é atualizado
 
-### RodapÃ© â€” Salvar / Recarregar
+### Rodapé — Salvar / Recarregar
 
-VisÃ­vel nas abas ConfiguraÃ§Ãµes, Produtos e Lojas:
-- **Salvar configuraÃ§Ãµes** â€” grava `config.json` e `store_detector.py`
-- **Recarregar arquivo** â€” descarta alteraÃ§Ãµes e relÃª o arquivo do disco
+Visível nas abas Configurações, Produtos e Lojas:
+- **Salvar configurações** — grava `config.json` e `store_detector.py`
+- **Recarregar arquivo** — descarta alterações e relê o arquivo do disco
 
 ---
 
-## âš™ï¸ PrÃ©-requisitos (desenvolvimento)
+## ⚙️ Pré-requisitos (desenvolvimento)
 
 - Python 3.10 ou superior
 - Conta Google com acesso ao Google Cloud Console
@@ -122,9 +121,9 @@ VisÃ­vel nas abas ConfiguraÃ§Ãµes, Produtos e Lojas:
 
 ---
 
-## ðŸš€ InstalaÃ§Ã£o (modo desenvolvimento)
+## 🚀 Instalação (modo desenvolvimento)
 
-### 1. Clone o repositÃ³rio
+### 1. Clone o repositório
 
 ```bash
 git clone https://github.com/seu-usuario/price-checker-bot.git
@@ -143,7 +142,7 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 3. Instale as dependÃªncias
+### 3. Instale as dependências
 
 ```bash
 pip install -r requirements.txt
@@ -157,13 +156,13 @@ playwright install chromium
 
 ---
 
-## ðŸ“¦ DistribuiÃ§Ã£o como .exe (Windows)
+## 📦 Distribuição como .exe (Windows)
 
-O projeto inclui um script de build que empacota tudo em `dist\PriceCheckerBot\` â€” incluindo o Chromium. NÃ£o Ã© necessÃ¡rio instalar Python ou dependÃªncias na mÃ¡quina de destino.
+O projeto inclui um script de build que empacota tudo em `dist\PriceCheckerBot\` — incluindo o Chromium. Não é necessário instalar Python ou dependências na máquina de destino.
 
-### PrÃ©-requisitos do build
+### Pré-requisitos do build
 
-1. Ambiente virtual configurado com todas as dependÃªncias instaladas
+1. Ambiente virtual configurado com todas as dependências instaladas
 2. Chromium instalado: `venv\Scripts\playwright install chromium`
 
 ### Gerar o .exe
@@ -174,12 +173,12 @@ O projeto inclui um script de build que empacota tudo em `dist\PriceCheckerBot\`
 
 O que o `build.py` faz:
 1. Instala/atualiza o PyInstaller
-2. Detecta e inclui os binÃ¡rios do Tcl/Tk automaticamente
-3. Roda o PyInstaller com `--onedir` e todos os `--collect-all` necessÃ¡rios
+2. Detecta e inclui os binários do Tcl/Tk automaticamente
+3. Roda o PyInstaller com `--onedir` e todos os `--collect-all` necessários
 4. Copia o Chromium de `%LOCALAPPDATA%\ms-playwright\` para dentro do bundle
-5. Copia `config.json`, `credentials.json` e `icon.ico` para a pasta de saÃ­da
+5. Copia `config.json`, `credentials.json` e `icon.ico` para a pasta de saída
 
-**SaÃ­da:** `dist\PriceCheckerBot\PriceCheckerBot.exe`
+**Saída:** `dist\PriceCheckerBot\PriceCheckerBot.exe`
 
 ### Distribuir
 
@@ -187,54 +186,54 @@ O que o `build.py` faz:
 Compress-Archive -Path "dist\PriceCheckerBot" -DestinationPath "dist\PriceCheckerBot-v1.0.0.zip"
 ```
 
-O usuÃ¡rio final coloca o `credentials.json` dentro da pasta `PriceCheckerBot\` e executa o `.exe`.
+O usuário final coloca o `credentials.json` dentro da pasta `PriceCheckerBot\` e executa o `.exe`. O Chromium já está embutido — nenhuma instalação adicional é necessária.
 
 ---
 
-## ðŸ”‘ ConfiguraÃ§Ã£o do Google Sheets
+## 🔑 Configuração do Google Sheets
 
-### Passo 1 â€” Criar projeto no Google Cloud
+### Passo 1 — Criar projeto no Google Cloud
 
 1. Acesse [console.cloud.google.com](https://console.cloud.google.com)
-2. Clique em **"Novo Projeto"** e dÃª um nome (ex: `price-checker-bot`)
-3. Em **APIs e ServiÃ§os â†’ Biblioteca**, ative:
+2. Clique em **"Novo Projeto"** e dê um nome (ex: `price-checker-bot`)
+3. Em **APIs e Serviços → Biblioteca**, ative:
    - **Google Sheets API**
    - **Google Drive API**
 
-### Passo 2 â€” Criar Service Account
+### Passo 2 — Criar Service Account
 
-1. VÃ¡ em **APIs e ServiÃ§os â†’ Credenciais**
-2. Clique em **"Criar Credenciais" â†’ "Conta de ServiÃ§o"**
-3. Preencha o nome (ex: `price-bot`) â†’ **"Criar e Continuar"** â†’ **"Concluir"**
+1. Vá em **APIs e Serviços → Credenciais**
+2. Clique em **"Criar Credenciais" → "Conta de Serviço"**
+3. Preencha o nome (ex: `price-bot`) → **"Criar e Continuar"** → **"Concluir"**
 4. Na lista, clique na service account criada
-5. VÃ¡ em **"Chaves" â†’ "Adicionar Chave" â†’ "Criar nova chave"** â†’ formato **JSON**
+5. Vá em **"Chaves" → "Adicionar Chave" → "Criar nova chave"** → formato **JSON**
 6. Mova o arquivo baixado para a pasta raiz do projeto com o nome `credentials.json`
 
-> âš ï¸ **Nunca suba o `credentials.json` para repositÃ³rios pÃºblicos!**
+> ⚠️ **Nunca suba o `credentials.json` para repositórios públicos!**
 
-### Passo 3 â€” Criar e compartilhar a planilha
+### Passo 3 — Criar e compartilhar a planilha
 
 1. Acesse [sheets.google.com](https://sheets.google.com) e crie uma planilha
 2. Nomeie-a exatamente como em `config.json` (`spreadsheet_name`)
 3. Abra o `credentials.json`, copie o `client_email`
-4. Na planilha, **Compartilhar** â†’ cole o e-mail â†’ permissÃ£o **Editor**
+4. Na planilha, clique em **Compartilhar** → cole o e-mail → permissão **Editor**
 
-> O bot cria o cabeÃ§alho automaticamente na primeira execuÃ§Ã£o.
+> O bot cria o cabeçalho automaticamente na primeira execução.
 
 ---
 
-## ðŸ§± Arquitetura de ExtraÃ§Ã£o de PreÃ§os
+## 🧱 Arquitetura de Extração de Preços
 
-O bot usa uma **estratÃ©gia em 4 camadas**, do mais ao menos confiÃ¡vel:
+O bot usa uma **estratégia em 4 camadas**, do mais ao menos confiável:
 
-| Camada | MÃ©todo | ConfianÃ§a | DescriÃ§Ã£o |
+| Camada | Método | Confiança | Descrição |
 |--------|---------|-----------|-----------|
-| 1 | **JSON-LD** | 98% | `<script type="application/ld+json">` â€” mais estÃ¡vel |
-| 2 | **Scraper dedicado** | 88â€“92% | Seletores CSS por loja (Kabum, Pichau, Amazon, Terabyte) |
+| 1 | **JSON-LD** | 98% | `<script type="application/ld+json">` — mais estável |
+| 2 | **Scraper dedicado** | 88–92% | Seletores CSS por loja (Kabum, Pichau, Amazon, Terabyte) |
 | 3 | **Seletores do config** | 75% | Seletores definidos manualmente no `config.json` |
-| 4 | **HeurÃ­stica** | 30â€“85% | Regex + pontuaÃ§Ã£o de elementos â€” fallback automÃ¡tico |
+| 4 | **Heurística** | 30–85% | Regex + pontuação de elementos — fallback automático |
 
-PÃ¡ginas que exigem JavaScript usam a camada extra **Playwright** (Chromium headless), ativada por `use_playwright: true` na configuraÃ§Ã£o do produto.
+Páginas que exigem JavaScript usam a camada extra **Playwright** (Chromium headless), ativada por `use_playwright: true` na configuração do produto.
 
 **Para adicionar suporte a uma nova loja programaticamente:**
 1. Crie `price_tracker/scrapers/<loja>.py` com `extract(soup) -> dict | None`
@@ -242,7 +241,7 @@ PÃ¡ginas que exigem JavaScript usam a camada extra **Playwright** (Chromium he
 
 ---
 
-## ðŸ“ ConfiguraÃ§Ã£o Manual do `config.json`
+## 📝 Configuração Manual do `config.json`
 
 ```json
 {
@@ -278,23 +277,23 @@ PÃ¡ginas que exigem JavaScript usam a camada extra **Playwright** (Chromium he
 
 ### Campos do produto
 
-| Campo | ObrigatÃ³rio | DescriÃ§Ã£o |
+| Campo | Obrigatório | Descrição |
 |---|---|---|
-| `name` | âœ… | Nome do produto (identificador Ãºnico) |
-| `url` | âœ… | URL completa da pÃ¡gina do produto |
-| `price_selectors` | â˜ opcional | Lista de seletores CSS (camada 3 â€” pode ser omitida) |
-| `use_playwright` | â˜ opcional | `true` para sites com preÃ§os renderizados via JavaScript |
+| `name` | ✅ | Nome do produto (identificador único) |
+| `url` | ✅ | URL completa da página do produto |
+| `price_selectors` | opcional | Lista de seletores CSS (camada 3 — pode ser omitida) |
+| `use_playwright` | opcional | `true` para sites com preços renderizados via JavaScript |
 
 ### Como descobrir o seletor CSS correto
 
-1. Abra a pÃ¡gina do produto no navegador
-2. Clique com o botÃ£o direito no preÃ§o â†’ **"Inspecionar"**
-3. Identifique a classe ou ID do elemento HTML que contÃ©m o preÃ§o
-4. Adicione-o Ã  lista `price_selectors`
+1. Abra a página do produto no navegador
+2. Clique com o botão direito no preço → **"Inspecionar"**
+3. Identifique a classe ou ID do elemento HTML que contém o preço
+4. Adicione-o à lista `price_selectors`
 
 **Exemplos por loja:**
 
-> â„¹ï¸ Para **Kabum, Pichau, Amazon e Terabyte** o bot jÃ¡ possui scrapers dedicados â€” os seletores abaixo sÃ£o complemento opcional:
+> Para **Kabum, Pichau, Amazon e Terabyte** o bot já possui scrapers dedicados — os seletores abaixo são complemento opcional:
 
 | Loja | Seletores comuns (se precisar personalizar) |
 |------|---------------------------------------------|
@@ -307,47 +306,46 @@ PÃ¡ginas que exigem JavaScript usam a camada extra **Playwright** (Chromium he
 
 ---
 
-## ðŸ“Š Estrutura da Planilha
+## 📊 Estrutura da Planilha
 
-| Coluna | Exemplo | DescriÃ§Ã£o |
+| Coluna | Exemplo | Descrição |
 |--------|---------|-----------|
-| `data` | 2026-03-09 | Data da verificaÃ§Ã£o |
+| `data` | 2026-03-09 | Data da verificação |
 | `produto` | RTX 4070 Super | Nome do produto |
 | `loja` | Kabum | Loja detectada automaticamente |
-| `preco` | 3499.90 | PreÃ§o atual |
+| `preco` | 3499.90 | Preço atual |
 | `url` | https://... | URL do produto |
-| `preco_minimo_historico` | 3299.00 | Menor preÃ§o jÃ¡ registrado |
+| `preco_minimo_historico` | 3299.00 | Menor preço já registrado |
 
 ---
 
-## â–¶ï¸ ExecuÃ§Ã£o sem GUI
+## ▶️ Execução sem GUI
 
 ```bash
-# Com ambiente virtual ativo
 python main.py
 ```
 
-**Exemplo de saÃ­da:**
+**Exemplo de saída:**
 
 ```
 2026-03-09 14:35:52 [INFO ] main: [1/11] Verificando: RTX 4070 Super (Kabum)
-2026-03-09 14:35:55 [INFO ] main:   â†’ MÃ©todo: jsonld | ConfianÃ§a: 98%
+2026-03-09 14:35:55 [INFO ] main:   → Método: jsonld | Confiança: 98%
 2026-03-09 14:35:56 [INFO ] sheets: Linha adicionada: [RTX 4070 Super] R$ 3.499,90 em 2026-03-09
 2026-03-09 14:36:07 [INFO ] main: =================================================================
-2026-03-09 14:36:07 [INFO ] main:   RESUMO DA EXECUÃ‡ÃƒO
-2026-03-09 14:36:07 [INFO ] main:   âœ“ Registrados com sucesso : 9
-2026-03-09 14:36:07 [INFO ] main:   â†’ Pulados (jÃ¡ registrados): 0
-2026-03-09 14:36:07 [INFO ] main:   âœ— Erros                   : 0
+2026-03-09 14:36:07 [INFO ] main:   RESUMO DA EXECUÇÃO
+2026-03-09 14:36:07 [INFO ] main:   ✓ Registrados com sucesso : 9
+2026-03-09 14:36:07 [INFO ] main:   → Pulados (já registrados): 0
+2026-03-09 14:36:07 [INFO ] main:   ✗ Erros                   : 0
 ```
 
 ---
 
-## ðŸ”” ConfiguraÃ§Ã£o do Telegram (Opcional)
+## 🔔 Configuração do Telegram (Opcional)
 
 ### 1. Criar o bot
 
 1. Inicie conversa com **@BotFather** no Telegram
-2. Envie `/newbot` e siga as instruÃ§Ãµes â†’ copie o **token**
+2. Envie `/newbot` e siga as instruções → copie o **token**
 
 ### 2. Obter o Chat ID
 
@@ -355,9 +353,9 @@ python main.py
 2. Acesse: `https://api.telegram.org/bot<SEU_TOKEN>/getUpdates`
 3. Copie o `"id"` dentro de `"chat"`
 
-### 3. Ativar no app
+### 3. Ativar
 
-Configure na aba âš™ï¸ ConfiguraÃ§Ãµes ou diretamente no `config.json`:
+Configure na aba ⚙️ Configurações do app ou diretamente no `config.json`:
 
 ```json
 "telegram": {
@@ -368,41 +366,39 @@ Configure na aba âš™ï¸ ConfiguraÃ§Ãµes ou diretamente no `config.jso
 }
 ```
 
-Quando ativado, vocÃª receberÃ¡:
+Quando ativado, você receberá:
 
 ```
-ðŸ”¥ NOVO MÃNIMO HISTÃ“RICO!
+🔥 NOVO MÍNIMO HISTÓRICO!
 
-ðŸ“¦ Produto: RTX 4070 Super
-ðŸª Loja: Kabum
-ðŸ’° PreÃ§o atual: R$ 3.299,90
-ðŸ“‰ MÃ­nimo anterior: R$ 3.499,90
-ðŸ’¸ Economia: R$ 200,00
-ðŸ”— Ver produto
+📦 Produto: RTX 4070 Super
+🏪 Loja: Kabum
+💰 Preço atual: R$ 3.299,90
+📉 Mínimo anterior: R$ 3.499,90
+💸 Economia: R$ 200,00
+🔗 Ver produto
 ```
 
 ---
 
-## â° AutomaÃ§Ã£o
+## ⏰ Automação
 
-### Windows â€” Agendador de Tarefas
+### Windows — Agendador de Tarefas
 
 1. Abra o **Agendador de Tarefas** (`taskschd.msc`)
-2. Clique em **"Criar Tarefa BÃ¡sica"**
-3. Nome: `Price Checker Bot` â€” Gatilho: **Diariamente** Ã s **08:00**
-4. AÃ§Ã£o: **Iniciar um programa**
+2. Clique em **"Criar Tarefa Básica"**
+3. Nome: `Price Checker Bot` — Gatilho: **Diariamente** às **08:00**
+4. Ação: **Iniciar um programa**
    - Programa: `C:\caminho\para\PriceCheckerBot\PriceCheckerBot.exe`
    - Iniciar em: `C:\caminho\para\PriceCheckerBot\`
 
-### Linux / macOS â€” Cron (modo desenvolvimento)
-
-Execute `crontab -e` e adicione:
+### Linux / macOS — Cron (modo desenvolvimento)
 
 ```cron
 0 8 * * * /caminho/para/venv/bin/python /caminho/para/price-checker-bot/main.py >> /caminho/para/logs/cron.log 2>&1
 ```
 
-### GitHub Actions â€” Na nuvem (grÃ¡tis)
+### GitHub Actions — Na nuvem (grátis)
 
 Crie `.github/workflows/price-checker.yml`:
 
@@ -411,7 +407,7 @@ name: Price Checker Bot
 
 on:
   schedule:
-    - cron: "0 11 * * *"   # 08:00 horÃ¡rio de BrasÃ­lia
+    - cron: "0 11 * * *"   # 08:00 horário de Brasília
   workflow_dispatch:
 
 jobs:
@@ -431,61 +427,61 @@ jobs:
           PYTHONIOENCODING: utf-8
 ```
 
-**Configurar secret:** Settings â†’ Secrets and Variables â†’ Actions â†’ `GOOGLE_CREDENTIALS` â†’ cole o conteÃºdo do `credentials.json`.
+**Configurar secret:** Settings → Secrets and Variables → Actions → `GOOGLE_CREDENTIALS` → cole o conteúdo do `credentials.json`.
 
-> âš ï¸ Nunca use em repositÃ³rios pÃºblicos sem proteger as credenciais via secrets.
+> ⚠️ Nunca use em repositórios públicos sem proteger as credenciais via secrets.
 
 ---
 
-## ðŸ“‹ Logs
+## 📋 Logs
 
 Gravados em `logs/price_tracker.log` e exibidos na aba Monitoramento do app.
 
-Formato:
 ```
 2026-03-09 14:35:52 [INFO ] main: mensagem
 ```
 
 Para ativar logs mais detalhados, altere em `main.py`:
+
 ```python
 setup_logging(level="DEBUG")
 ```
 
 ---
 
-## ðŸ› ï¸ SoluÃ§Ã£o de Problemas
+## 🛠️ Solução de Problemas
 
-### âŒ "Planilha nÃ£o encontrada"
-- O nome em `spreadsheet_name` deve ser **idÃªntico** ao nome no Google Drive (incluindo maiÃºsculas)
+### ❌ "Planilha não encontrada"
+- O nome em `spreadsheet_name` deve ser **idêntico** ao nome no Google Drive (incluindo maiúsculas)
 - Confirme que a planilha foi compartilhada com o `client_email` do `credentials.json`
 
-### âŒ "credentials.json nÃ£o encontrado"
+### ❌ "credentials.json não encontrado"
 - O arquivo deve estar na mesma pasta do `PriceCheckerBot.exe` (ou do `main.py` em modo dev)
 
-### âŒ PreÃ§o nÃ£o extraÃ­do / mÃ©todo: heurÃ­stica
-- O site pode ter atualizado o HTML â€” inspecione e atualize os seletores em `price_selectors`
-- Se o preÃ§o Ã© renderizado por JavaScript, ative `use_playwright: true` na aba Produtos
+### ❌ Preço não extraído / método: heurística
+- O site pode ter atualizado o HTML — inspecione e atualize os seletores em `price_selectors`
+- Se o preço é renderizado por JavaScript, ative `use_playwright: true` na aba Produtos
 
-### âŒ Playwright â€” browser nÃ£o encontrado
+### ❌ Playwright — browser não encontrado
 - O build copia o Chromium automaticamente de `%LOCALAPPDATA%\ms-playwright\`
-- Se essa pasta estiver vazia: execute `playwright install chromium` (ou `venv\Scripts\playwright install chromium`) e refaÃ§a o build com `.\build.bat`
+- Se essa pasta estiver vazia: execute `playwright install chromium` e refaça o build com `.\build.bat`
 
-### âŒ Erro de autenticaÃ§Ã£o no Google
-- Verifique se as APIs **Google Sheets** e **Google Drive** estÃ£o ativadas no projeto
-- Confirme que o `credentials.json` Ã© da **service account** (nÃ£o OAuth 2.0)
+### ❌ Erro de autenticação no Google
+- Verifique se as APIs **Google Sheets** e **Google Drive** estão ativadas no projeto
+- Confirme que o `credentials.json` é da **service account** (não OAuth 2.0)
 
-### âŒ Bot Telegram nÃ£o envia mensagens
+### ❌ Bot Telegram não envia mensagens
 - Verifique `enabled: true` e os valores de `bot_token` e `chat_id`
 - Certifique-se de ter iniciado uma conversa com o bot antes de receber mensagens
 
-### âŒ Interface grÃ¡fica nÃ£o abre
+### ❌ Interface gráfica não abre
 - Execute: `python -c "import tkinter; tkinter.Tk().destroy(); print('OK')"`
 - No Linux: `sudo apt install python3-tk`
 - No `.exe`: verifique se `_internal\_tcl_data` e `_internal\_tk_data` existem na pasta
 
 ---
 
-## ðŸ“œ LicenÃ§a
+## 📜 Licença
 
-MIT License â€” sinta-se livre para usar, modificar e distribuir.
+MIT License — sinta-se livre para usar, modificar e distribuir.
 
