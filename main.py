@@ -115,17 +115,46 @@ def validate_product(product: dict) -> Optional[str]:
     """
     Valida se um produto do config.json tem todos os campos obrigatórios.
     Retorna None se válido, ou uma string de erro se inválido.
-    price_selectors é opcional — a extração em camadas (JSON-LD → scraper de loja
-    → CSS → heurística) funciona mesmo sem seletores definidos.
+
+    Apenas 'url' é obrigatório. 'name' e 'store' são preenchidos
+    automaticamente se omitidos. 'price_selectors' é sempre opcional.
     """
-    required = ["name", "store", "url"]
-    missing = [field for field in required if not product.get(field)]
-    if missing:
-        return f"Campos ausentes ou vazios: {missing}"
+    if not product.get("url", "").strip():
+        return "Campo 'url' ausente ou vazio"
     selectors = product.get("price_selectors")
     if selectors is not None and not isinstance(selectors, list):
         return "price_selectors deve ser uma lista de strings (ou omitido)"
     return None
+
+
+def _auto_name(url: str, idx: int) -> str:
+    """Gera um nome legível a partir da URL quando 'name' não é informado."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        # Pega o último segmento não-vazio do path
+        parts = [p for p in parsed.path.split("/") if p]
+        if parts:
+            slug = parts[-1].replace("-", " ").replace("_", " ").strip()
+            if slug and not slug.isdigit():
+                return slug[:80].title()
+        # Fallback para o domínio
+        host = parsed.netloc.lstrip("www.").split(".")[0]
+        return f"{host.title()} #{idx}"
+    except Exception:
+        return f"Produto #{idx}"
+
+
+def _auto_store(url: str) -> str:
+    """Infere o nome de exibição da loja a partir do domínio da URL."""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url).netloc.lstrip("www.")
+        # Pega o nome antes do primeiro ponto e capitaliza
+        name = host.split(".")[0]
+        return name.title()
+    except Exception:
+        return "?"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -171,9 +200,9 @@ def run() -> None:
 
     # ── Itera sobre os produtos ────────────────────────────────────────────
     for idx, product in enumerate(products, start=1):
-        name = product.get("name", f"Produto #{idx}")
-        store = product.get("store", "?")
-        url = product.get("url", "")
+        url      = product.get("url", "").strip()
+        name     = product.get("name", "").strip() or _auto_name(url, idx)
+        store    = product.get("store", "").strip() or _auto_store(url)
         selectors = product.get("price_selectors", [])
 
         logger.info(f"[{idx}/{len(products)}] Verificando: {name} ({store})")

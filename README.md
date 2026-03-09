@@ -165,9 +165,27 @@ python config_gui.py
 
 No formulário de produto, os **seletores CSS** são inseridos um por linha, do mais específico para o mais genérico, e são **opcionais** — o bot já tenta JSON-LD, scraper de loja e heurística automática antes de depender deles.
 
+### Aba 🏪 Lojas
+
+Gerencia o `STORE_MAP` em `price_tracker/core/store_detector.py` — o dicionário que associa fragmentos de domínio aos scrapers dedicados.
+
+| Ação | Como usar |
+|---|---|
+| **➕ Adicionar** | Informa domínio (ex: `americanas`) e ID do scraper; opcionalmente cria template |
+| **🗑️ Remover** | Remove um domínio personalizado do mapeamento (builtins são protegidos) |
+| **📄 Criar / Abrir Template** | Cria `price_tracker/scrapers/<id>.py` com estrutura pronta; se já existir, abre no editor |
+
+**Fluxo para adicionar uma nova loja:**
+1. Clique em **➕ Adicionar**
+2. Informe o fragmento do domínio (ex: `americanas` para `americanas.com.br`)
+3. Informe o ID do scraper (ex: `americanas`) — preenche automaticamente
+4. Deixe "Criar arquivo de scraper template" marcado e clique em **Adicionar**
+5. O arquivo `price_tracker/scrapers/americanas.py` será criado — preencha os seletores CSS do preço
+6. Clique em **Salvar configurações** — o `store_detector.py` é atualizado automaticamente
+
 ### Salvando
 
-Clique em **"Salvar configurações"** — o `config.json` é atualizado imediatamente. O bot utilizará as novas configurações na próxima execução.
+Clique em **"Salvar configurações"** — o `config.json` e o `store_detector.py` são atualizados imediatamente. O bot utilizará as novas configurações na próxima execução.
 
 ---
 
