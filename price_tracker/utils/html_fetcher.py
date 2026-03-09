@@ -18,6 +18,14 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+# Tenta importar cloudscraper (bypass Cloudflare) — usado como fallback no 403
+try:
+    import cloudscraper as _cloudscraper_module
+    _CLOUDSCRAPER_AVAILABLE = True
+except ImportError:
+    _CLOUDSCRAPER_AVAILABLE = False
+    logger.debug("cloudscraper não instalado — fallback Cloudflare desabilitado.")
+
 # ── Headers que imitam Chrome no Windows ────────────────────────────────────
 _HEADERS = {
     "User-Agent": (
@@ -94,6 +102,13 @@ def fetch_page(
                 )
                 time.sleep(wait)
                 continue
+            # 403 geralmente indica Cloudflare — tenta via cloudscraper
+            if status == 403:
+                soup = _try_cloudscraper(url)
+                if soup is not None:
+                    if use_cache:
+                        _cache[url] = soup
+                    return soup
             logger.error(f"Erro HTTP {status}: {url}")
             return None
 
@@ -116,3 +131,36 @@ def clear_cache() -> None:
     """Limpa o cache de HTML em memória. Use entre execuções longas."""
     _cache.clear()
     logger.debug("Cache HTML limpo.")
+
+
+def _try_cloudscraper(url: str) -> Optional[BeautifulSoup]:
+    """
+    Tenta baixar a página usando cloudscraper (bypass de Cloudflare JS challenge).
+    Retorna BeautifulSoup em caso de sucesso, None caso contrário.
+    """
+    if not _CLOUDSCRAPER_AVAILABLE:
+        logger.warning(
+            f"HTTP 403 em {url} — instale 'cloudscraper' para tentar "
+            "ignorar a proteção Cloudflare: pip install cloudscraper"
+        )
+        return None
+
+    logger.info(f"HTTP 403 detectado — tentando cloudscraper para: {url}")
+    try:
+        scraper = _cloudscraper_module.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
+        response = scraper.get(url, timeout=25)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "lxml")
+            logger.info(f"[cloudscraper] Página obtida com sucesso: {url}")
+            return soup
+        logger.warning(
+            f"[cloudscraper] Código {response.status_code} para {url} — "
+            "Cloudflare 'Under Attack Mode' provavelmente ativo. "
+            "Considere usar Playwright para esta loja."
+        )
+        return None
+    except Exception as exc:
+        logger.warning(f"[cloudscraper] Falha em {url}: {exc}")
+        return None
