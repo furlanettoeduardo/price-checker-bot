@@ -4,7 +4,7 @@ aggregator.py
 Agrega resultados de múltiplas fontes de busca e retorna lista unificada
 de ofertas ordenada por preço crescente.
 
-Fontes disponíveis: mercadolivre, zoom
+Fontes disponíveis: mercadolivre, zoom, kabum, pichau, terabyte, amazon
 
 Uso programático:
     from price_tracker.search.aggregator import search
@@ -25,7 +25,7 @@ Uso programático:
 import logging
 from typing import Optional
 
-from price_tracker.search import mercadolivre, zoom
+from price_tracker.search import amazon, kabum, mercadolivre, pichau, terabyte, zoom
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,13 @@ logger = logging.getLogger(__name__)
 _SOURCES: dict = {
     "mercadolivre": mercadolivre,
     "zoom": zoom,
+    "kabum": kabum,
+    "pichau": pichau,
+    "terabyte": terabyte,
+    "amazon": amazon,
 }
 
-DEFAULT_SOURCES: list[str] = ["mercadolivre", "zoom"]
+DEFAULT_SOURCES: list[str] = ["mercadolivre", "zoom", "kabum", "pichau", "terabyte", "amazon"]
 
 
 def search(

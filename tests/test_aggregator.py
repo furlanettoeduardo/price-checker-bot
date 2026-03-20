@@ -3,8 +3,9 @@ tests/test_aggregator.py
 ------------------------
 Testes unitários para price_tracker.search.aggregator.
 
-Os testes mocam as funções de busca individuais (mercadolivre, zoom)
-para que nenhuma requisição de rede seja feita durante a execução.
+Os testes mocam as funções de busca individuais (mercadolivre, zoom,
+kabum, pichau, terabyte, amazon) para que nenhuma requisição de rede
+seja feita durante a execução.
 
 Execute com:
     python -m pytest tests/
@@ -40,6 +41,14 @@ def _zoom_offers():
 # ---------------------------------------------------------------------------
 
 class TestAggregatorSearch(unittest.TestCase):
+
+    def setUp(self):
+        """Faz mock de todas as fontes novas para evitar chamadas de rede."""
+        _new_sources = ["kabum", "pichau", "terabyte", "amazon"]
+        for src in _new_sources:
+            p = patch(f"price_tracker.search.{src}.search", return_value=[])
+            p.start()
+            self.addCleanup(p.stop)
 
     @patch("price_tracker.search.zoom.search", return_value=_zoom_offers())
     @patch("price_tracker.search.mercadolivre.search", return_value=_ml_offers())

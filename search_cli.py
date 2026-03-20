@@ -13,10 +13,15 @@ Uso:
 """
 
 import argparse
+import io
 import json
 import logging
 import sys
 from pathlib import Path
+
+# Force UTF-8 output on Windows (avoids UnicodeEncodeError with emojis / box-chars)
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # Ensure the repo root is in sys.path when running this file directly.
 sys.path.insert(0, str(Path(__file__).parent))
@@ -37,10 +42,14 @@ def _fmt_price(price: float) -> str:
 
 
 def _source_tag(source: str) -> str:
-    """Retorna rótulo compacto de 2 letras da fonte."""
+    """Retorna rótulo compacto da fonte."""
     tags = {
         "mercadolivre": "ML",
         "zoom": "ZM",
+        "kabum": "KB",
+        "pichau": "PI",
+        "terabyte": "TB",
+        "amazon": "AMZ",
     }
     return f"[{tags.get(source, source[:2].upper())}]"
 
