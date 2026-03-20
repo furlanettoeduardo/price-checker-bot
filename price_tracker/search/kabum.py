@@ -1,22 +1,17 @@
 """
-mercadolivre.py
+search/kabum.py
 ---------------
-Scraper para o Mercado Livre Brasil (lista.mercadolivre.com.br).
+Scraper de busca para KaBuM (kabum.com.br).
 
 Estratégia:
-1. Tenta extrair dados do __NEXT_DATA__ (JSON embutido pelo Next.js).
-2. Fallback: parseia os cards de produto do HTML renderizado via Playwright.
-
-Nota: a API pública do ML (/sites/MLB/search?q=...) requer permissões
-elevadas não disponíveis para aplicativos comuns. O scraping da página de
-resultados é a abordagem mais confiável para buscas por palavra-chave.
+1. Extrai dados do __NEXT_DATA__ (Next.js) — mais estável.
+2. Fallback: parseia cards de produto do HTML renderizado via Playwright.
 
 Retorna lista de dicts com: name, price, store, url, source
 """
 
 import json
 import logging
-import re
 from typing import Optional
 from urllib.parse import quote_plus
 
@@ -27,7 +22,7 @@ from price_tracker.utils.price_parser import normalize_price
 
 logger = logging.getLogger(__name__)
 
-_SEARCH_URL = "https://lista.mercadolivre.com.br/{query}"
+_SEARCH_URL = "https://www.kabum.com.br/busca/{query}"
 
 
 def search(
@@ -35,14 +30,9 @@ def search(
     max_results: int = 10,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
-    # kept for API-compatibility with aggregator / search_cli kwargs
-    access_token: Optional[str] = None,
-    app_id: Optional[str] = None,
-    secret_key: Optional[str] = None,
-    refresh_token: Optional[str] = None,
 ) -> list[dict]:
     """
-    Busca produtos no Mercado Livre e retorna lista de ofertas.
+    Busca produtos na KaBuM e retorna lista de ofertas.
 
     Parâmetros
     ----------
@@ -51,12 +41,12 @@ def search(
     min_price   : Filtro de preço mínimo (opcional)
     max_price   : Filtro de preço máximo (opcional)
     """
-    slug = query.strip().replace(" ", "-")
-    url = _SEARCH_URL.format(query=quote_plus(slug, safe="-"))
+    slug = query.strip().replace(" ", "%20")
+    url = _SEARCH_URL.format(query=slug)
 
     soup = fetch_page(url, use_playwright=True, use_cache=False, timeout=45)
     if soup is None:
-        logger.warning("[MercadoLivre] Falha ao carregar página: %s", url)
+        logger.warning("[KaBuM] Falha ao carregar página: %s", url)
         return []
 
     results = _parse_next_data(soup)
@@ -68,7 +58,7 @@ def search(
     if max_price is not None:
         results = [r for r in results if r["price"] <= max_price]
 
-    logger.info("[MercadoLivre] %d resultado(s) para '%s'", len(results), query)
+    logger.info("[KaBuM] %d resultado(s) para '%s'", len(results), query)
     return results[:max_results]
 
 
@@ -85,64 +75,67 @@ def _parse_next_data(soup: BeautifulSoup) -> list[dict]:
     except (json.JSONDecodeError, ValueError):
         return []
 
-    items = _collect_items_from_json(data)
+    products = _find_products(data)
     results = []
-    for item in items:
-        parsed = _parse_item_dict(item)
+    for p in products:
+        parsed = _parse_product(p)
         if parsed:
             results.append(parsed)
 
     if results:
-        logger.debug("[MercadoLivre/__NEXT_DATA__] %d itens extraídos", len(results))
+        logger.debug("[KaBuM/__NEXT_DATA__] %d produtos extraídos", len(results))
     return results
 
 
-def _collect_items_from_json(obj, depth: int = 0) -> list:
-    """Percorre recursivamente o JSON procurando listas de anúncios ML."""
+def _find_products(obj, depth: int = 0) -> list:
+    """Percorre o JSON recursivamente procurando lista de produtos KaBuM."""
     if depth > 12:
         return []
     if isinstance(obj, list):
-        # Heurística: lista cujos elementos têm "title" e "price"
-        if obj and isinstance(obj[0], dict) and "title" in obj[0] and "price" in obj[0]:
-            return obj
-        results = []
+        if obj and isinstance(obj[0], dict):
+            keys = set(obj[0].keys())
+            if (keys & {"title", "name", "productName"}) and (keys & {"price", "salePrice", "priceFrom"}):
+                return obj
         for v in obj:
-            results.extend(_collect_items_from_json(v, depth + 1))
-        return results
-    if isinstance(obj, dict):
-        results = []
+            r = _find_products(v, depth + 1)
+            if r:
+                return r
+    elif isinstance(obj, dict):
         for v in obj.values():
-            results.extend(_collect_items_from_json(v, depth + 1))
-        return results
+            r = _find_products(v, depth + 1)
+            if r:
+                return r
     return []
 
 
-def _parse_item_dict(item: dict) -> Optional[dict]:
+def _parse_product(p: dict) -> Optional[dict]:
     try:
-        title = item.get("title") or item.get("name") or ""
+        title = p.get("title") or p.get("name") or p.get("productName") or ""
         if not title:
             return None
 
-        raw_price = (
-            item.get("price")
-            or item.get("sale_price")
-            or (item.get("prices") or {}).get("price")
+        price_raw = (
+            p.get("price")
+            or p.get("salePrice")
+            or p.get("priceFrom")
+            or p.get("specialPrice")
         )
-        if raw_price is None:
+        if price_raw is None:
             return None
-        price = float(raw_price)
+        price = float(price_raw)
         if price <= 0:
             return None
 
-        permalink = item.get("permalink") or item.get("url") or ""
-        seller = (item.get("seller") or {}).get("nickname", "") or "MercadoLivre"
+        url = p.get("url") or p.get("link") or p.get("canonicalUrl") or ""
+        if url and not url.startswith("http"):
+            url = "https://www.kabum.com.br" + url
 
         return {
-            "name": title,
+            "name": str(title)[:200],
             "price": price,
-            "store": f"ML/{seller[:30]}",
-            "url": permalink,
-            "source": "mercadolivre",
+            "store": "KaBuM",
+            "url": url,
+            "source": "kabum",
         }
     except (TypeError, ValueError):
         return None
@@ -152,33 +145,32 @@ def _parse_item_dict(item: dict) -> Optional[dict]:
 # Estratégia 2: parse HTML renderizado
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Seletores CSS do Mercado Livre (atualizado para 2025)
 _ITEM_SELECTORS = [
-    "li.ui-search-layout__item",
-    "div.ui-search-result__wrapper",
-    "li.results-item",
+    "article[data-testid='product-card']",
+    "article.productCard",
+    "[class*='productCard']",
+    "[data-testid='product-card']",
+    "[class*='product-card']",
 ]
 _TITLE_SELECTORS = [
-    "h2.poly-box",
-    "h2.ui-search-item__title",
-    "a.ui-search-item__brand-discoverability > h2",
-    ".poly-component__title",
-    ".ui-search-item__title",
+    "span.nameCard",
+    "[data-testid='product-name']",
+    "[class*='nameCard']",
+    "h3",
+    "h2",
 ]
 _PRICE_SELECTORS = [
-    "span.andes-money-amount__fraction",
-    "span.price-tag-fraction",
-    "span.poly-price__current .andes-money-amount__fraction",
+    "span.salePrice",
+    "[data-testid='new-price']",
+    "h4.finalPrice",
+    "[class*='finalPrice']",
+    "[class*='salePrice']",
+    "span[class*='price']",
 ]
 _LINK_SELECTORS = [
-    "a.poly-component__title",
-    "a.ui-search-result__content-wrapper",
-    "a.ui-search-link",
-]
-_SELLER_SELECTORS = [
-    ".poly-component__seller",
-    ".ui-search-official-store-label",
-    ".ui-search-item__group__element--seller-info",
+    "a[data-testid='product-link']",
+    "a[href*='/produto/']",
+    "a",
 ]
 
 
@@ -189,7 +181,7 @@ def _parse_html_cards(soup: BeautifulSoup) -> list[dict]:
         if items:
             break
     if not items:
-        logger.debug("[MercadoLivre/HTML] Nenhum card encontrado")
+        logger.debug("[KaBuM/HTML] Nenhum card encontrado")
         return []
 
     results = []
@@ -208,7 +200,7 @@ def _parse_html_cards(soup: BeautifulSoup) -> list[dict]:
             for sel in _PRICE_SELECTORS:
                 el = card.select_one(sel)
                 if el:
-                    price_str = el.get_text(strip=True).replace(".", "").replace(",", ".")
+                    price_str = el.get_text(strip=True)
                     break
             if not price_str:
                 continue
@@ -220,25 +212,19 @@ def _parse_html_cards(soup: BeautifulSoup) -> list[dict]:
             for sel in _LINK_SELECTORS:
                 el = card.select_one(sel)
                 if el and el.get("href"):
-                    url = el["href"]
-                    break
-
-            seller = "MercadoLivre"
-            for sel in _SELLER_SELECTORS:
-                el = card.select_one(sel)
-                if el:
-                    seller = el.get_text(strip=True)[:30]
+                    href = el["href"]
+                    url = href if href.startswith("http") else "https://www.kabum.com.br" + href
                     break
 
             results.append({
                 "name": title,
                 "price": price,
-                "store": f"ML/{seller}",
+                "store": "KaBuM",
                 "url": url,
-                "source": "mercadolivre",
+                "source": "kabum",
             })
         except Exception:
             continue
 
-    logger.debug("[MercadoLivre/HTML] %d cards parseados", len(results))
+    logger.debug("[KaBuM/HTML] %d cards parseados", len(results))
     return results

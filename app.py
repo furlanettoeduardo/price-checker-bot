@@ -1028,6 +1028,265 @@ class StoresTab(ttk.Frame):
         save_store_map(self._store_map, config)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SearchTab(ttk.Frame):
+    """
+    Aba de busca por palavras-chave em múltiplas lojas.
+    Exibe resultados em tempo real e permite salvar no Google Sheets.
+    """
+
+    _SOURCE_LABELS = [
+        ("mercadolivre", "Mercado Livre"),
+        ("zoom",         "Zoom"),
+        ("kabum",        "KaBuM"),
+        ("pichau",       "Pichau"),
+        ("terabyte",     "Terabyte"),
+        ("amazon",       "Amazon"),
+    ]
+
+    def __init__(self, parent, app: "App"):
+        super().__init__(parent)
+        self._app    = app
+        self._offers: list[dict] = []
+        self._lock   = __import__("threading").Lock()
+        self._build()
+
+    def _build(self) -> None:
+        # ── Barra de busca ────────────────────────────────────────────────
+        search_bar = tk.Frame(self, bg=BG, pady=10)
+        search_bar.pack(fill="x", padx=16)
+
+        tk.Label(search_bar, text="Produto:", font=FONT_LABEL, bg=BG, fg=FG).pack(side="left")
+        self._query_var = tk.StringVar()
+        self._query_entry = ttk.Entry(search_bar, textvariable=self._query_var, width=46)
+        self._query_entry.pack(side="left", padx=(6, 8))
+        self._query_entry.bind("<Return>", lambda _e: self._on_search())
+
+        self._search_btn = tk.Button(
+            search_bar, text="🔎  Buscar",
+            bg=ACCENT, fg=FG_DARK, activebackground=ACCENT, activeforeground=FG_DARK,
+            relief="flat", padx=14, pady=5, font=("Segoe UI", 10, "bold"),
+            cursor="hand2", command=self._on_search,
+        )
+        self._search_btn.pack(side="left")
+
+        # ── Filtros de preço ──────────────────────────────────────────────
+        filters_bar = tk.Frame(self, bg=BG)
+        filters_bar.pack(fill="x", padx=16, pady=(0, 4))
+
+        for label, attr in [("Preço mín (R$):", "_min_price_var"), ("Preço máx (R$):", "_max_price_var")]:
+            tk.Label(filters_bar, text=label, font=FONT_SMALL, bg=BG, fg=FG_DIM).pack(side="left")
+            var = tk.StringVar()
+            setattr(self, attr, var)
+            ttk.Entry(filters_bar, textvariable=var, width=10).pack(side="left", padx=(4, 16))
+
+        tk.Label(filters_bar, text="Max por fonte:", font=FONT_SMALL, bg=BG, fg=FG_DIM).pack(side="left")
+        self._max_results_var = tk.StringVar(value="25")
+        ttk.Entry(filters_bar, textvariable=self._max_results_var, width=6).pack(side="left", padx=(4, 16))
+
+        # ── Fontes de busca ───────────────────────────────────────────────
+        src_frame = tk.Frame(self, bg=BG, pady=4)
+        src_frame.pack(fill="x", padx=16)
+        tk.Label(src_frame, text="Fontes:", font=FONT_SMALL, bg=BG, fg=FG_DIM).pack(side="left", padx=(0, 8))
+        self._src_vars: dict[str, tk.BooleanVar] = {}
+        for key, label in self._SOURCE_LABELS:
+            var = tk.BooleanVar(value=True)
+            self._src_vars[key] = var
+            ttk.Checkbutton(src_frame, text=label, variable=var).pack(side="left", padx=4)
+
+        # ── Progresso ─────────────────────────────────────────────────────
+        self._progress_lbl = tk.Label(self, text="", font=FONT_SMALL, bg=BG, fg=FG_DIM)
+        self._progress_lbl.pack(anchor="w", padx=16, pady=(4, 0))
+
+        # ── Tabela de resultados ──────────────────────────────────────────
+        tree_frame = tk.Frame(self, bg=BG)
+        tree_frame.pack(fill="both", expand=True, padx=16, pady=(4, 0))
+
+        cols = ("produto", "loja", "preco", "fonte")
+        self._tree = ttk.Treeview(
+            tree_frame, columns=cols, show="headings",
+            selectmode="extended", height=16,
+        )
+        self._tree.heading("produto", text="Produto")
+        self._tree.heading("loja",    text="Loja")
+        self._tree.heading("preco",   text="Preço (R$)")
+        self._tree.heading("fonte",   text="Fonte")
+        self._tree.column("produto", width=380, minwidth=180)
+        self._tree.column("loja",    width=140, minwidth=80)
+        self._tree.column("preco",   width=110, minwidth=70, anchor="e")
+        self._tree.column("fonte",   width=120, minwidth=70)
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical",   command=self._tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self._tree.xview)
+        self._tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        vsb.pack(side="right",  fill="y")
+        hsb.pack(side="bottom", fill="x")
+        self._tree.pack(side="left", fill="both", expand=True)
+
+        # ── Rodapé da aba ─────────────────────────────────────────────────
+        bottom = tk.Frame(self, bg=BG, pady=8)
+        bottom.pack(fill="x", padx=16)
+
+        self._result_lbl = tk.Label(bottom, text="", font=FONT_SMALL, bg=BG, fg=FG_DIM)
+        self._result_lbl.pack(side="left")
+
+        self._save_btn = tk.Button(
+            bottom, text="💾  Salvar selecionados no Sheets",
+            bg=BG_PANEL, fg=FG, activebackground=SEL_BG, activeforeground=FG,
+            relief="flat", padx=14, pady=5, font=("Segoe UI", 9),
+            cursor="hand2", command=self._on_save,
+            state="disabled",
+        )
+        self._save_btn.pack(side="right")
+
+        tk.Button(
+            bottom, text="Selecionar todos",
+            bg=BG_PANEL, fg=FG, activebackground=SEL_BG, activeforeground=FG,
+            relief="flat", padx=10, pady=5, font=("Segoe UI", 9),
+            cursor="hand2", command=lambda: self._tree.selection_set(self._tree.get_children()),
+        ).pack(side="right", padx=8)
+
+    # ── Busca ─────────────────────────────────────────────────────────────────
+
+    def _on_search(self) -> None:
+        query = self._query_var.get().strip()
+        if not query:
+            messagebox.showinfo("Campo vazio", "Digite o nome do produto para buscar.", parent=self.winfo_toplevel())
+            return
+
+        sources = [k for k, v in self._src_vars.items() if v.get()]
+        if not sources:
+            messagebox.showinfo("Sem fontes", "Selecione ao menos uma fonte de busca.", parent=self.winfo_toplevel())
+            return
+
+        try:
+            max_results = int(self._max_results_var.get().strip() or "25")
+        except ValueError:
+            max_results = 25
+
+        def _parse_price(s: str) -> Optional[float]:
+            s = s.strip().replace(",", ".")
+            try:
+                return float(s) if s else None
+            except ValueError:
+                return None
+
+        min_price = _parse_price(self._min_price_var.get())
+        max_price = _parse_price(self._max_price_var.get())
+
+        # Reset UI
+        self._tree.delete(*self._tree.get_children())
+        self._offers.clear()
+        self._result_lbl.configure(text="Buscando...", fg=FG_DIM)
+        self._search_btn.configure(state="disabled")
+        self._save_btn.configure(state="disabled")
+
+        n_sources   = len(sources)
+        done_count  = [0]
+        src_status: dict[str, str] = {}
+
+        def _on_source_done(source_name: str, n_results: int, elapsed: float) -> None:
+            with self._lock:
+                done_count[0] += 1
+                src_status[source_name] = f"{n_results} resultados ({elapsed:.1f}s)"
+            status_text = "  ".join(f"{k}: {v}" for k, v in src_status.items())
+            self.after(0, self._progress_lbl.configure, {"text": f"[{done_count[0]}/{n_sources}]  {status_text}"})
+
+        def _worker() -> None:
+            from price_tracker.search.aggregator import search as agg_search
+            try:
+                result = agg_search(
+                    query,
+                    max_results=max_results,
+                    min_price=min_price,
+                    max_price=max_price,
+                    sources=sources,
+                    on_source_done=_on_source_done,
+                )
+                offers = result.get("offers", [])
+            except Exception as exc:
+                offers = []
+                self.after(0, messagebox.showerror, "Erro na busca", str(exc))
+            self.after(0, self._populate_results, offers, query)
+
+        __import__("threading").Thread(target=_worker, daemon=True).start()
+
+    def _populate_results(self, offers: list[dict], query: str) -> None:
+        self._offers = offers
+        self._tree.delete(*self._tree.get_children())
+
+        for offer in offers:
+            price = offer.get("price")
+            price_fmt = f"{price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if price is not None else ""
+            self._tree.insert("", "end", values=(
+                offer.get("name",   ""),
+                offer.get("store",  ""),
+                price_fmt,
+                offer.get("source", ""),
+            ))
+
+        total = len(offers)
+        self._result_lbl.configure(
+            text=f"{total} oferta(s) encontrada(s) para \"{query}\"",
+            fg=SUCCESS if total > 0 else WARNING,
+        )
+        self._search_btn.configure(state="normal")
+        self._save_btn.configure(state="normal" if total > 0 else "disabled")
+        self._app.set_status(f"Busca concluída: {total} resultado(s)", SUCCESS if total > 0 else FG_DIM)
+
+    # ── Salvar no Sheets ──────────────────────────────────────────────────────
+
+    def _on_save(self) -> None:
+        sel_indices = [self._tree.index(iid) for iid in self._tree.selection()]
+        if not sel_indices:
+            # If nothing selected, save all
+            sel_indices = list(range(len(self._offers)))
+
+        to_save = [self._offers[i] for i in sel_indices if i < len(self._offers)]
+        if not to_save:
+            messagebox.showinfo("Nada selecionado", "Selecione as ofertas que deseja salvar.", parent=self.winfo_toplevel())
+            return
+
+        cfg = load_config()
+        gs_cfg = cfg.get("google_sheets", {})
+        creds_file  = gs_cfg.get("credentials_file", "credentials.json")
+        sheet_name  = gs_cfg.get("spreadsheet_name", "Price Tracker")
+
+        if not creds_file or not sheet_name:
+            messagebox.showwarning(
+                "Configuração incompleta",
+                "Configure o arquivo de credenciais e o nome da planilha na aba Configurações.",
+                parent=self.winfo_toplevel(),
+            )
+            return
+
+        self._save_btn.configure(state="disabled", text="Salvando...")
+        self._app.set_status("Salvando no Google Sheets...", WARNING)
+
+        def _worker() -> None:
+            try:
+                from sheets import connect_to_sheets, append_search_results
+                creds_path = BASE_DIR / creds_file
+                sheet = connect_to_sheets(str(creds_path), sheet_name)
+                written = append_search_results(sheet, to_save)
+                self.after(0, self._after_save, written, None)
+            except Exception as exc:
+                self.after(0, self._after_save, 0, exc)
+
+        __import__("threading").Thread(target=_worker, daemon=True).start()
+
+    def _after_save(self, written: int, error: Optional[Exception]) -> None:
+        self._save_btn.configure(state="normal", text="💾  Salvar selecionados no Sheets")
+        if error:
+            messagebox.showerror("Erro ao salvar", str(error), parent=self.winfo_toplevel())
+            self._app.set_status("Erro ao salvar no Sheets.", ERROR_C)
+        else:
+            msg = f"{written} linha(s) gravada(s) na planilha."
+            messagebox.showinfo("Salvo!", msg, parent=self.winfo_toplevel())
+            self._app.set_status(msg, SUCCESS)
+
+
 # =============================================================================
 # Janela principal
 # =============================================================================
@@ -1119,11 +1378,13 @@ class App(tk.Tk):
         self._general_tab  = GeneralTab(self._nb)
         self._products_tab = ProductsTab(self._nb)
         self._stores_tab   = StoresTab(self._nb)
+        self._search_tab   = SearchTab(self._nb, app=self)
 
         self._nb.add(self._monitor_tab,  text="  Monitoramento  ")
         self._nb.add(self._general_tab,  text="  Configuracoes  ")
         self._nb.add(self._products_tab, text="  Produtos  ")
         self._nb.add(self._stores_tab,   text="  Lojas  ")
+        self._nb.add(self._search_tab,   text="  Busca  ")
 
         self._monitor_tab.setup_logging(self._log_queue)
         self._load_config_tabs()
@@ -1172,8 +1433,9 @@ class App(tk.Tk):
             idx = self._nb.index(self._nb.select())
         except Exception:
             idx = 0
-        if idx == 0:
-            # Aba de monitoramento — esconde botoes de config
+        # Only show Salvar/Recarregar on config tabs (Configuracoes, Produtos, Lojas)
+        if idx in (0, 4):
+            # Monitoramento and Busca — operational tabs, no config saving needed
             self._save_btn.pack_forget()
             self._reload_btn.pack_forget()
         else:

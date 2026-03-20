@@ -20,7 +20,7 @@ from typing import Optional
 from bs4 import BeautifulSoup
 
 from price_tracker.utils.html_fetcher import fetch_page
-from price_tracker.utils.price_parser import parse_price
+from price_tracker.utils.price_parser import normalize_price as parse_price
 
 logger = logging.getLogger(__name__)
 

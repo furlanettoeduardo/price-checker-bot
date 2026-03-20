@@ -9,6 +9,8 @@
     "chat_id": "SEU_CHAT_ID_AQUI",
     "alert_on_new_low": true
   },
+  "mercadolivre_app_id": "3861210610759827",
+  "mercadolivre_secret_key": "ToDouxFLL39zAsV9pju2ztIStNmjoqrx",
   "products": [
     {
       "name": "Processador AMD Ryzen 7 9800X3D 8-Core 16-Threads AM5",
@@ -115,5 +117,7 @@
       "name": "Base Alpha Evo Simagic 9Nm Simulador Extreme Simracing",
       "store": "Kabum"
     }
-  ]
+  ],
+  "mercadolivre_redirect_uri": "https://79dc-167-250-154-168.ngrok-free.app/callback",
+  "mercadolivre_access_token": "APP_USR-3861210610759827-032014-969c1733394af220780f47097a50fc14-1224742801"
 }
