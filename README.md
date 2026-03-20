@@ -10,7 +10,8 @@ Bot em Python que monitora preços de produtos em lojas brasileiras e registra o
 price-checker-bot/
 │
 ├── app.py               # Interface gráfica principal (launcher + configurações)
-├── main.py              # Orquestrador principal — pode ser chamado diretamente
+├── main.py              # Orquestrador principal — monitoramento por URL
+├── search_cli.py        # 🆕 Busca interativa por nome → lista de preços
 ├── config_gui.py        # Editor de configuração standalone (legado / opcional)
 ├── sheets.py            # Integração com Google Sheets
 ├── notifier.py          # Alertas via Telegram (opcional)
@@ -20,9 +21,9 @@ price-checker-bot/
 ├── build.py             # Script de empacotamento para .exe (PyInstaller)
 ├── build.bat            # Atalho: chama venv\Scripts\python.exe build.py
 │
-├── price_tracker/       # Pacote principal de extração de preços
+├── price_tracker/       # Pacote principal de extração e busca de preços
 │   ├── core/
-│   │   ├── price_extractor.py   # Orquestrador das 4 camadas
+│   │   ├── price_extractor.py   # Orquestrador das 4 camadas de extração
 │   │   ├── jsonld_parser.py     # Camada 1 — JSON-LD (dados estruturados)
 │   │   ├── store_detector.py    # Detecta a loja pela URL
 │   │   └── heuristics.py        # Camada 4 — heurística por pontuação
@@ -31,11 +32,19 @@ price-checker-bot/
 │   │   ├── pichau.py            # Scraper dedicado Pichau
 │   │   ├── amazon.py            # Scraper dedicado Amazon
 │   │   └── terabyte.py          # Scraper dedicado Terabyte
+│   ├── search/
+│   │   ├── aggregator.py        # 🆕 Mescla resultados de todas as fontes
+│   │   ├── mercadolivre.py      # Fonte — API pública do Mercado Livre
+│   │   └── zoom.py              # Fonte — Zoom.com.br (Playwright)
 │   └── utils/
 │       ├── html_fetcher.py      # HTTP com cache, retry, cloudscraper e Playwright
 │       └── price_parser.py      # Normalização (R$ 3.499,90 → 3499.90)
 │
 ├── tests/               # Testes unitários (pytest)
+│   ├── test_aggregator.py       # 🆕 Testes do módulo de busca agregada
+│   ├── test_heuristics.py
+│   ├── test_jsonld_parser.py
+│   └── test_price_parser.py
 └── logs/
     └── price_tracker.log
 ```
@@ -378,6 +387,80 @@ Quando ativado, você receberá:
 💸 Economia: R$ 200,00
 🔗 Ver produto
 ```
+
+---
+
+## 🔎 Busca de Preços por Nome (Search CLI)
+
+Além do modo de monitoramento por URL, o bot inclui uma ferramenta de busca que recebe o nome de um produto e retorna uma lista de preços de múltiplas lojas — sem precisar informar URLs ou configurar nada.
+
+### Uso básico
+
+```bash
+python search_cli.py "RTX 4070"
+```
+
+**Exemplo de saída:**
+
+```
+Buscando 'RTX 4070'... pronto.
+
+🔍  Busca: "RTX 4070"
+    18 oferta(s) encontrada(s)
+    Menor: R$ 3.299,90   |   Maior: R$ 3.799,00
+
+    #  Produto                                                  Loja                          Preço  Fonte
+  ─────────────────────────────────────────────────────────────────────────────────────────────────────
+    1  RTX 4070 ASUS Dual OC 12GB                               ML/KABUM_OFICIAL          R$ 3.299,90  [ML]
+       → https://www.mercadolivre.com.br/...
+    2  Placa De Video Rtx 4070 Galax 1-Click OC                 Zoom/CaboPower            R$ 3.350,00  [ZM]
+       → https://www.zoom.com.br/...
+    3  RTX 4070 MSI Ventus 2X OC 12GB GDDR6X                   ML/GPU_STORE              R$ 3.499,00  [ML]
+       → https://www.mercadolivre.com.br/...
+  ─────────────────────────────────────────────────────────────────────────────────────────────────────
+```
+
+### Opções da linha de comando
+
+| Opção | Padrão | Descrição |
+|---|---|---|
+| `query` | — | Nome do produto a buscar (**obrigatório**) |
+| `--max-results N` | 10 | Máximo de resultados por fonte |
+| `--min-price R$` | — | Filtra resultados abaixo desse preço |
+| `--max-price R$` | — | Filtra resultados acima desse preço |
+| `--sources FONTE...` | todas | Fontes a consultar: `mercadolivre`, `zoom` |
+| `--no-urls` | — | Omite os links das ofertas na saída |
+| `--log-level LEVEL` | WARNING | Verbosidade interna: DEBUG, INFO, WARNING, ERROR |
+
+### Exemplos
+
+```bash
+# Busca simples
+python search_cli.py "Ryzen 7 9800X3D"
+
+# Com limite de preço e mais resultados
+python search_cli.py "SSD 1TB NVMe" --min-price 200 --max-price 600 --max-results 20
+
+# Apenas Mercado Livre, sem URLs
+python search_cli.py "memória RAM DDR5 32GB" --sources mercadolivre --no-urls
+
+# Modo debug (mostra o que cada fonte retornou)
+python search_cli.py "placa de vídeo" --log-level INFO
+```
+
+### Arquitetura do módulo de busca
+
+```
+price_tracker/search/
+├── aggregator.py      # Orquestrador: chama as fontes, mescla e ordena resultados
+├── mercadolivre.py    # Fonte 1 — API pública do Mercado Livre (sem autenticação)
+└── zoom.py            # Fonte 2 — Zoom.com.br via Playwright + __NEXT_DATA__
+```
+
+**Para adicionar uma nova fonte de busca:**
+1. Crie `price_tracker/search/<fonte>.py` com a função `search(query, max_results, min_price, max_price) -> list[dict]`
+2. Cada item da lista deve ter: `name`, `price`, `store`, `url`, `source`
+3. Registre a nova fonte em `_SOURCES` em `aggregator.py`
 
 ---
 
