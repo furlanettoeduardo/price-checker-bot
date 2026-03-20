@@ -17,6 +17,7 @@ import io
 import json
 import logging
 import sys
+import threading
 from pathlib import Path
 
 # Force UTF-8 output on Windows (avoids UnicodeEncodeError with emojis / box-chars)
@@ -52,6 +53,40 @@ def _source_tag(source: str) -> str:
         "amazon": "AMZ",
     }
     return f"[{tags.get(source, source[:2].upper())}]"
+
+
+_print_lock = threading.Lock()
+
+
+def _make_progress_callback(sources: list[str]) -> object:
+    """
+    Retorna um callable que imprime uma linha de progresso thread-safe
+    conforme cada fonte termina, ex:
+        [1/3] mercadolivre   12 oferta(s)  (4.2s)
+    """
+    total = len(sources)
+    counter = [0]  # mutável via closure
+
+    def _callback(source_name: str, n_results: int, elapsed: float) -> None:
+        with _print_lock:
+            counter[0] += 1
+            tag = _source_tag(source_name)
+            status = f"{n_results} oferta(s)" if n_results else "sem resultados"
+            print(f"  [{counter[0]}/{total}] {tag} {source_name:<14} {status}  ({elapsed:.1f}s)")
+            sys.stdout.flush()
+
+    return _callback
+
+
+def _print_timings(timings: dict[str, float]) -> None:
+    """Imprime resumo dos tempos por fonte ao final."""
+    if not timings:
+        return
+    total_wall = max(timings.values())   # tempo real (paralelo)
+    total_seria = sum(timings.values())  # tempo que levaria sequencial
+    print(f"  Tempo real (paralelo): {total_wall:.1f}s  "
+          f"| Economia vs sequencial: {total_seria - total_wall:.0f}s")
+    print()
 
 
 def _print_table(result: dict, show_urls: bool = True) -> None:
@@ -193,7 +228,11 @@ Exemplos:
         except (json.JSONDecodeError, OSError):
             pass
 
-    print(f"Buscando '{args.query}'...", end=" ", flush=True)
+    active_sources = args.sources or list(DEFAULT_SOURCES)
+    progress_cb = _make_progress_callback(active_sources)
+
+    print(f"Buscando '{args.query}' em {len(active_sources)} fonte(s)...")
+    print()
 
     result = search(
         query=args.query,
@@ -202,9 +241,11 @@ Exemplos:
         max_price=args.max_price,
         sources=args.sources,
         source_kwargs=source_kwargs,
+        on_source_done=progress_cb,
     )
 
-    print("pronto.")
+    print()
+    _print_timings(result.get("timings", {}))
     _print_table(result, show_urls=not args.no_urls)
 
 

@@ -262,3 +262,58 @@ def get_price_history(sheet: gspread.Worksheet, product_name: str) -> list:
     except Exception as exc:
         logger.error(f"Erro ao buscar histÃ³rico de '{product_name}': {exc}")
         return []
+
+
+def append_search_results(
+    sheet: gspread.Worksheet,
+    offers: list[dict],
+    skip_duplicates: bool = True,
+) -> int:
+    """
+    Grava uma lista de ofertas retornadas pelo agregador de busca na planilha.
+
+    Parâmetros
+    ----------
+    sheet            : Worksheet do gspread
+    offers           : Lista de dicts no formato do aggregator:
+                       {"name": str, "price": float, "store": str, "url": str, "source": str}
+    skip_duplicates  : Se True, pula ofertas que já existem para (data, produto, loja).
+
+    Retorna o número de linhas gravadas.
+    """
+    from datetime import date as _date
+    today = str(_date.today())
+    written = 0
+
+    for offer in offers:
+        name  = str(offer.get("name",  "") or "").strip()
+        price = offer.get("price")
+        store = str(offer.get("store", "") or "").strip()
+        url   = str(offer.get("url",   "") or "").strip()
+
+        if not name or price is None:
+            continue
+
+        if skip_duplicates and is_duplicate_shopping(sheet, today, name, store):
+            logger.debug(f"[append_search_results] Duplicata ignorada: {name} @ {store}")
+            continue
+
+        previous_min = get_min_price(sheet, name)
+        min_p = min(previous_min, float(price)) if previous_min is not None else float(price)
+
+        success = append_row(
+            sheet=sheet,
+            data={
+                "data":    today,
+                "produto": name,
+                "loja":    store,
+                "preco":   price,
+                "url":     url,
+            },
+            min_price=min_p,
+        )
+        if success:
+            written += 1
+
+    logger.info(f"[append_search_results] {written}/{len(offers)} linhas gravadas na planilha.")
+    return written

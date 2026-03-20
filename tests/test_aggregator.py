@@ -127,6 +127,43 @@ class TestAggregatorSearch(unittest.TestCase):
         self.assertIn("mercadolivre", DEFAULT_SOURCES)
         self.assertIn("zoom", DEFAULT_SOURCES)
 
+    @patch("price_tracker.search.zoom.search", return_value=_zoom_offers())
+    @patch("price_tracker.search.mercadolivre.search", return_value=_ml_offers())
+    def test_timings_included_in_result(self, mock_ml, mock_zoom):
+        """O resultado deve conter 'timings' com uma entrada por fonte consultada."""
+        result = search("RTX 4070", sources=["mercadolivre", "zoom"])
+        self.assertIn("timings", result)
+        self.assertIn("mercadolivre", result["timings"])
+        self.assertIn("zoom", result["timings"])
+        self.assertIsInstance(result["timings"]["mercadolivre"], float)
+
+    @patch("price_tracker.search.zoom.search", return_value=_zoom_offers())
+    @patch("price_tracker.search.mercadolivre.search", return_value=_ml_offers())
+    def test_on_source_done_callback_called(self, mock_ml, mock_zoom):
+        """on_source_done deve ser chamado uma vez por fonte com os argumentos corretos."""
+        calls = []
+        def _cb(name, n, elapsed):
+            calls.append((name, n, elapsed))
+
+        search("RTX 4070", sources=["mercadolivre", "zoom"], on_source_done=_cb)
+
+        self.assertEqual(len(calls), 2)
+        names = {c[0] for c in calls}
+        self.assertEqual(names, {"mercadolivre", "zoom"})
+        for _, n, elapsed in calls:
+            self.assertIsInstance(n, int)
+            self.assertGreaterEqual(elapsed, 0)
+
+    @patch("price_tracker.search.zoom.search", return_value=_zoom_offers())
+    @patch("price_tracker.search.mercadolivre.search", return_value=_ml_offers())
+    def test_on_source_done_error_does_not_crash(self, mock_ml, mock_zoom):
+        """Se on_source_done lançar exceção, a busca deve continuar normalmente."""
+        def _bad_cb(name, n, elapsed):
+            raise RuntimeError("callback error")
+
+        result = search("RTX 4070", sources=["mercadolivre", "zoom"], on_source_done=_bad_cb)
+        self.assertEqual(result["total"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

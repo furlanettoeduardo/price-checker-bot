@@ -4,6 +4,9 @@ aggregator.py
 Agrega resultados de múltiplas fontes de busca e retorna lista unificada
 de ofertas ordenada por preço crescente.
 
+As fontes são consultadas em PARALELO via ThreadPoolExecutor — o tempo
+total é determinado pela fonte mais lenta, não pela soma de todas.
+
 Fontes disponíveis: mercadolivre, zoom, kabum, pichau, terabyte, amazon
 
 Uso programático:
@@ -16,6 +19,7 @@ Uso programático:
     #   "min_price": 3299.90,
     #   "max_price": 3799.00,
     #   "total": 18,
+    #   "timings": {"mercadolivre": 4.2, "zoom": 3.8},   # segundos por fonte
     # }
 
     # Passando tokens de API opcionais:
@@ -23,7 +27,9 @@ Uso programático:
 """
 
 import logging
-from typing import Optional
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Callable, Optional
 
 from price_tracker.search import amazon, kabum, mercadolivre, pichau, terabyte, zoom
 
@@ -43,6 +49,11 @@ _SOURCES: dict = {
 
 DEFAULT_SOURCES: list[str] = ["mercadolivre", "zoom", "kabum", "pichau", "terabyte", "amazon"]
 
+# Número máximo de fontes rodando em paralelo.
+# Playwright lança um processo Chromium por thread — manter ≤ 6 evita pressão
+# excessiva de memória em máquinas com RAM limitada.
+_MAX_WORKERS = 6
+
 
 def search(
     query: str,
@@ -51,18 +62,22 @@ def search(
     max_price: Optional[float] = None,
     sources: Optional[list[str]] = None,
     source_kwargs: Optional[dict] = None,
+    on_source_done: Optional[Callable[[str, int, float], None]] = None,
 ) -> dict:
     """
-    Busca um produto em múltiplas fontes e retorna ofertas agregadas.
+    Busca um produto em múltiplas fontes em PARALELO e retorna ofertas agregadas.
 
     Parâmetros
     ----------
-    query        : Texto de busca (ex: "RTX 4070")
-    max_results  : Máximo de resultados por fonte (padrão: 10)
-    min_price    : Filtro de preço mínimo em R$ (opcional)
-    max_price    : Filtro de preço máximo em R$ (opcional)
-    sources      : Lista de fontes a consultar — usa DEFAULT_SOURCES se None
-    source_kwargs: Kwargs extras por fonte, ex: {"mercadolivre": {"access_token": "..."}}
+    query         : Texto de busca (ex: "RTX 4070")
+    max_results   : Máximo de resultados por fonte (padrão: 10)
+    min_price     : Filtro de preço mínimo em R$ (opcional)
+    max_price     : Filtro de preço máximo em R$ (opcional)
+    sources       : Lista de fontes a consultar — usa DEFAULT_SOURCES se None
+    source_kwargs : Kwargs extras por fonte, ex: {"mercadolivre": {"access_token": "..."}}
+    on_source_done: Callback opcional chamado quando cada fonte termina:
+                    on_source_done(source_name, n_results, elapsed_seconds)
+                    Útil para exibir progresso em tempo real no CLI.
 
     Retorna
     -------
@@ -72,6 +87,7 @@ def search(
         "min_price": float | None,
         "max_price": float | None,
         "total":     int,
+        "timings":   dict[str, float],  # tempo em segundos por fonte
     }
 
     Cada oferta em "offers":
@@ -82,20 +98,27 @@ def search(
     if source_kwargs is None:
         source_kwargs = {}
 
-    all_offers: list[dict] = []
-
-    for source_name in sources:
-        fn = _SOURCES.get(source_name)
-        if fn is None:
+    # Filtra fontes desconhecidas antes de disparar threads
+    valid_sources: list[str] = []
+    for name in sources:
+        if name in _SOURCES:
+            valid_sources.append(name)
+        else:
             logger.warning(
                 "[Aggregator] Fonte desconhecida: '%s' — ignorada. "
                 "Fontes disponíveis: %s",
-                source_name,
+                name,
                 ", ".join(_SOURCES),
             )
-            continue
 
+    all_offers: list[dict] = []
+    timings: dict[str, float] = {}
+
+    def _run_source(source_name: str) -> tuple[str, list[dict], float]:
+        """Executa uma fonte e retorna (nome, resultados, tempo_decorrido)."""
+        fn = _SOURCES[source_name]
         extra = source_kwargs.get(source_name, {})
+        t0 = time.monotonic()
         try:
             results = fn.search(
                 query,
@@ -104,10 +127,29 @@ def search(
                 max_price=max_price,
                 **extra,
             )
-            logger.info("[Aggregator] %s: %d oferta(s)", source_name, len(results))
-            all_offers.extend(results)
         except Exception as exc:
             logger.warning("[Aggregator] Erro ao consultar '%s': %s", source_name, exc)
+            results = []
+        elapsed = time.monotonic() - t0
+        return source_name, results, elapsed
+
+    n_workers = min(_MAX_WORKERS, len(valid_sources))
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = {executor.submit(_run_source, name): name for name in valid_sources}
+
+        for future in as_completed(futures):
+            source_name, results, elapsed = future.result()
+            timings[source_name] = round(elapsed, 2)
+            all_offers.extend(results)
+            logger.info(
+                "[Aggregator] %s: %d oferta(s) em %.1fs",
+                source_name, len(results), elapsed,
+            )
+            if on_source_done is not None:
+                try:
+                    on_source_done(source_name, len(results), elapsed)
+                except Exception:
+                    pass
 
     all_offers.sort(key=lambda o: o["price"])
 
@@ -118,4 +160,5 @@ def search(
         "min_price": min(prices) if prices else None,
         "max_price": max(prices) if prices else None,
         "total": len(all_offers),
+        "timings": timings,
     }
