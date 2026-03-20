@@ -33,15 +33,19 @@ price-checker-bot/
 │   │   ├── amazon.py            # Scraper dedicado Amazon
 │   │   └── terabyte.py          # Scraper dedicado Terabyte
 │   ├── search/
-│   │   ├── aggregator.py        # 🆕 Mescla resultados de todas as fontes
-│   │   ├── mercadolivre.py      # Fonte — API pública do Mercado Livre
-│   │   └── zoom.py              # Fonte — Zoom.com.br (Playwright)
+│   │   ├── aggregator.py        # 🆕 Orquestrador: busca paralela em todas as fontes
+│   │   ├── mercadolivre.py      # Fonte — Mercado Livre (scraping Playwright)
+│   │   ├── zoom.py              # Fonte — Zoom.com.br (__NEXT_DATA__ + Playwright)
+│   │   ├── kabum.py             # Fonte — KaBuM (__NEXT_DATA__ + HTML)
+│   │   ├── pichau.py            # Fonte — Pichau (HTML, MUI)
+│   │   ├── terabyte.py          # Fonte — Terabyte Shop (HTML + filtro de relevância)
+│   │   └── amazon.py            # Fonte — Amazon BR (Playwright + detecção de CAPTCHA)
 │   └── utils/
 │       ├── html_fetcher.py      # HTTP com cache, retry, cloudscraper e Playwright
 │       └── price_parser.py      # Normalização (R$ 3.499,90 → 3499.90)
 │
 ├── tests/               # Testes unitários (pytest)
-│   ├── test_aggregator.py       # 🆕 Testes do módulo de busca agregada
+│   ├── test_aggregator.py       # 🆕 54 testes do módulo de busca agregada
 │   ├── test_heuristics.py
 │   ├── test_jsonld_parser.py
 │   └── test_price_parser.py
@@ -61,6 +65,7 @@ O `app.py` é o ponto de entrada principal. Reúne em uma única janela:
 | **⚙️ Configurações** | Google Sheets, Telegram e opções gerais |
 | **📦 Produtos** | Adicionar, editar, remover e reordenar produtos monitorados |
 | **🏪 Lojas** | Gerenciar o mapeamento domínio → scraper dedicado |
+| **🔎 Busca** | Busca por nome em 6 lojas em paralelo, com opção de salvar no Sheets |
 
 Para iniciar:
 
@@ -114,9 +119,36 @@ Gerencia o `STORE_MAP` em `price_tracker/core/store_detector.py`.
 4. Preencha os seletores no arquivo gerado
 5. Clique em **Salvar configurações** — o `store_detector.py` é atualizado
 
+### Aba 🔎 Busca
+
+Busca o preço de qualquer produto por nome em até 6 lojas **em paralelo** — sem precisar de URLs ou configuração.
+
+| Elemento | Descrição |
+|---|---|
+| Campo de busca | Digite o nome do produto e pressione Enter ou clique em Buscar |
+| Preço mín / máx | Filtra resultados fora do intervalo de preço |
+| Max por fonte | Número máximo de resultados por loja (padrão: 25) |
+| Checkboxes de fontes | Seleciona quais das 6 lojas consultar |
+| Tabela de resultados | Lista de ofertas com Produto / Loja / Preço / Fonte, ordenada do mais barato ao mais caro |
+| Progresso em tempo real | Exibe `[n/total]  loja: X resultados (Xs)` conforme cada fonte termina |
+| Salvar selecionados no Sheets | Grava as linhas selecionadas (ou todas, se nada selecionado) na planilha do Google |
+
+**Fontes disponíveis na aba Busca:**
+
+| Tag | Fonte | Método |
+|---|---|---|
+| ML | Mercado Livre | Playwright — scraping de `lista.mercadolivre.com.br` |
+| ZM | Zoom | `__NEXT_DATA__` JSON + fallback Playwright |
+| KB | KaBuM | `__NEXT_DATA__` JSON + fallback HTML |
+| PI | Pichau | HTML (MUI v2 — `[class*='product_item']`) |
+| TB | Terabyte | HTML + filtro de relevância automático |
+| AMZ | Amazon | Playwright + detecção de CAPTCHA |
+
+> **Dica:** por padrão todas as 6 fontes rodam em paralelo — o tempo total é o da fonte mais lenta, não a soma de todas.
+
 ### Rodapé — Salvar / Recarregar
 
-Visível nas abas Configurações, Produtos e Lojas:
+Visível nas abas Configurações, Produtos e Lojas (oculto nas abas Monitoramento e Busca):
 - **Salvar configurações** — grava `config.json` e `store_detector.py`
 - **Recarregar arquivo** — descarta alterações e relê o arquivo do disco
 
@@ -279,6 +311,15 @@ Páginas que exigem JavaScript usam a camada extra **Playwright** (Chromium head
       "name": "Cockpit Speedtrack ST",
       "url": "https://loja.cockpitextremeracing.com.br/products/cockpit-speedtrack-st",
       "use_playwright": true
+    },
+    {
+      "search_mode": "shopping",
+      "name": "RTX 4070 Super",
+      "keywords": ["placa de video nvidia"],
+      "max_results": 20,
+      "min_price": 2500,
+      "max_price": 5000,
+      "sources": ["mercadolivre", "zoom", "kabum", "pichau", "terabyte", "amazon"]
     }
   ]
 }
@@ -286,12 +327,25 @@ Páginas que exigem JavaScript usam a camada extra **Playwright** (Chromium head
 
 ### Campos do produto
 
+**Modo URL (padrão):**
+
 | Campo | Obrigatório | Descrição |
 |---|---|---|
 | `name` | ✅ | Nome do produto (identificador único) |
 | `url` | ✅ | URL completa da página do produto |
 | `price_selectors` | opcional | Lista de seletores CSS (camada 3 — pode ser omitida) |
 | `use_playwright` | opcional | `true` para sites com preços renderizados via JavaScript |
+
+**Modo Shopping (`search_mode: "shopping"`):**
+
+| Campo | Obrigatório | Descrição |
+|---|---|---|
+| `name` | ✅ | Nome do produto — usado como query de busca |
+| `keywords` | opcional | Lista de palavras-chave extras para refinar a busca |
+| `max_results` | opcional | Máximo de ofertas por fonte (padrão: 10) |
+| `min_price` | opcional | Filtra ofertas abaixo desse valor |
+| `max_price` | opcional | Filtra ofertas acima desse valor |
+| `sources` | opcional | Lista de fontes: `mercadolivre`, `zoom`, `kabum`, `pichau`, `terabyte`, `amazon` |
 
 ### Como descobrir o seletor CSS correto
 
@@ -428,7 +482,7 @@ Buscando 'RTX 4070'... pronto.
 | `--max-results N` | 10 | Máximo de resultados por fonte |
 | `--min-price R$` | — | Filtra resultados abaixo desse preço |
 | `--max-price R$` | — | Filtra resultados acima desse preço |
-| `--sources FONTE...` | todas | Fontes a consultar: `mercadolivre`, `zoom` |
+| `--sources FONTE...` | todas | Fontes a consultar: `mercadolivre` `zoom` `kabum` `pichau` `terabyte` `amazon` |
 | `--no-urls` | — | Omite os links das ofertas na saída |
 | `--log-level LEVEL` | WARNING | Verbosidade interna: DEBUG, INFO, WARNING, ERROR |
 
@@ -441,10 +495,13 @@ python search_cli.py "Ryzen 7 9800X3D"
 # Com limite de preço e mais resultados
 python search_cli.py "SSD 1TB NVMe" --min-price 200 --max-price 600 --max-results 20
 
+# Apenas KaBuM e Pichau
+python search_cli.py "SSD NVMe 2TB" --sources kabum pichau
+
 # Apenas Mercado Livre, sem URLs
 python search_cli.py "memória RAM DDR5 32GB" --sources mercadolivre --no-urls
 
-# Modo debug (mostra o que cada fonte retornou)
+# Modo debug (mostra o que cada fonte retornou internamente)
 python search_cli.py "placa de vídeo" --log-level INFO
 ```
 
@@ -452,15 +509,23 @@ python search_cli.py "placa de vídeo" --log-level INFO
 
 ```
 price_tracker/search/
-├── aggregator.py      # Orquestrador: chama as fontes, mescla e ordena resultados
-├── mercadolivre.py    # Fonte 1 — API pública do Mercado Livre (sem autenticação)
-└── zoom.py            # Fonte 2 — Zoom.com.br via Playwright + __NEXT_DATA__
+├── aggregator.py      # Orquestrador paralelo (ThreadPoolExecutor) — mescla e ordena
+├── mercadolivre.py    # Playwright — lista.mercadolivre.com.br
+├── zoom.py            # __NEXT_DATA__ JSON + fallback Playwright
+├── kabum.py           # __NEXT_DATA__ JSON + fallback HTML
+├── pichau.py          # HTML, MUI v2 — [class*='product_item']
+├── terabyte.py        # HTML + filtro de relevância automático
+└── amazon.py          # Playwright + detecção de CAPTCHA
 ```
 
-**Para adicionar uma nova fonte de busca:**
-1. Crie `price_tracker/search/<fonte>.py` com a função `search(query, max_results, min_price, max_price) -> list[dict]`
-2. Cada item da lista deve ter: `name`, `price`, `store`, `url`, `source`
-3. Registre a nova fonte em `_SOURCES` em `aggregator.py`
+**Execução paralela:** todas as fontes rodam ao mesmo tempo via `ThreadPoolExecutor`. O tempo total é determinado pela fonte mais lenta — não pela soma de todas.
+
+**Callback de progresso:** `on_source_done(source, n_results, elapsed_s)` permite exibir status em tempo real (usado pelo CLI e pela aba Busca).
+
+**Para adicionar uma nova fonte:**
+1. Crie `price_tracker/search/<fonte>.py` com `search(query, max_results, min_price, max_price) -> list[dict]`
+2. Cada item deve conter: `name`, `price`, `store`, `url`, `source`
+3. Registre a nova fonte em `_SOURCES` e `DEFAULT_SOURCES` no `aggregator.py`
 
 ---
 
@@ -561,6 +626,20 @@ setup_logging(level="DEBUG")
 - Execute: `python -c "import tkinter; tkinter.Tk().destroy(); print('OK')"`
 - No Linux: `sudo apt install python3-tk`
 - No `.exe`: verifique se `_internal\_tcl_data` e `_internal\_tk_data` existem na pasta
+
+### ❌ Aba Busca — nenhum resultado retornado
+- Algumas lojas (Pichau, Amazon) têm proteção anti-bot — tente novamente ou exclua essa fonte
+- Refine a query: use termos mais genéricos sem marcas abreviadas (ex: `rtx 4070` em vez de `RTX4070`)
+- Use `--log-level INFO` no CLI para ver o que cada fonte retornou internamente
+
+### ❌ "Salvar no Sheets" retorna erro de conexão
+- Verifique se `credentials.json` está na pasta do projeto
+- Verifique se a planilha foi compartilhada com o `client_email` do `credentials.json`
+- Confirme que as APIs Google Sheets e Google Drive estão ativadas no projeto do Google Cloud
+
+### ❌ UnicodeEncodeError no terminal (Windows)
+- Execute o CLI com: `chcp 65001` antes, ou use `python -X utf8 search_cli.py "..."` 
+- O `search_cli.py` já força UTF-8 automaticamente via `io.TextIOWrapper`
 
 ---
 

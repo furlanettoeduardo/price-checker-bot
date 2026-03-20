@@ -12,6 +12,7 @@ Retorna lista de dicts com: name, price, store, url, source
 
 import json
 import logging
+import re
 from typing import Optional
 from urllib.parse import quote_plus
 
@@ -19,6 +20,12 @@ from bs4 import BeautifulSoup
 
 from price_tracker.utils.html_fetcher import fetch_page
 from price_tracker.utils.price_parser import normalize_price
+
+# Texto de parcelamento que pode ser confundido com nome do produto
+_INSTALLMENT_RE = re.compile(
+    r'^em\s+at[eé]\s+\d+|sem\s+juros|^\d+x\s+de\s+r\$|^a\s+partir\s+de',
+    re.IGNORECASE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +58,8 @@ def search(
     results = _parse_next_data(soup)
     if not results:
         results = _parse_html_cards(soup)
+
+    results = _relevance_filter(results, query)
 
     if min_price is not None:
         results = [r for r in results if r["price"] >= min_price]
@@ -198,7 +207,7 @@ def _parse_html_cards(soup: BeautifulSoup) -> list[dict]:
                 el = card.select_one(sel)
                 if el:
                     text = el.get_text(strip=True)
-                    if len(text) > 5:
+                    if len(text) > 5 and not _INSTALLMENT_RE.match(text):
                         title = text
                         break
             if not title:
@@ -236,3 +245,31 @@ def _parse_html_cards(soup: BeautifulSoup) -> list[dict]:
 
     logger.debug("[Pichau/HTML] %d cards parseados", len(results))
     return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Filtro de relevância
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _relevance_filter(results: list[dict], query: str) -> list[dict]:
+    """
+    Remove resultados que não correspondem à query.
+    Tokens com dígitos (ex: '4070', '1tb', 'ddr5') são obrigatórios:
+    todos devem aparecer no nome do produto.
+    """
+    tokens = [t.lower() for t in re.split(r'[\s\-/]+', query) if t]
+    # Tokens numéricos de ≥2 chars são os identificadores de modelo
+    required = [t for t in tokens if re.search(r'\d', t) and len(t) >= 2]
+    if not required:
+        return results
+
+    filtered = []
+    for r in results:
+        name_l = r["name"].lower()
+        if all(rt in name_l for rt in required):
+            filtered.append(r)
+
+    removed = len(results) - len(filtered)
+    if removed:
+        logger.debug("[Pichau/_relevance_filter] %d resultado(s) removido(s)", removed)
+    return filtered
