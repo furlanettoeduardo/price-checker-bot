@@ -8,9 +8,7 @@
     "bot_token": "SEU_BOT_TOKEN_AQUI",
     "chat_id": "SEU_CHAT_ID_AQUI",
     "alert_on_new_low": true
-  },
-  "mercadolivre_app_id": "3861210610759827",
-  "mercadolivre_secret_key": "ToDouxFLL39zAsV9pju2ztIStNmjoqrx",
+  }
   "products": [
     {
       "name": "Processador AMD Ryzen 7 9800X3D 8-Core 16-Threads AM5",
